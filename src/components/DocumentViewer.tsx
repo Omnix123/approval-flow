@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useMemo, useState, useCallback } from 'react';
 import { PDFViewer, SignaturePlacement } from './PDFViewer';
 import { SignatureCanvas } from './SignatureCanvas';
 import { Button } from '@/components/ui/button';
@@ -23,8 +23,12 @@ interface DocumentViewerProps {
   isEditing?: boolean;
 }
 
-// Demo PDF URL - in production this would be your actual document
-const DEMO_PDF_URL = 'https://raw.githubusercontent.com/nicobao/pdf-sample/main/simple-pdf.pdf';
+function resolveDocumentUrl(url: string) {
+  // Support both absolute URLs and app-relative paths like "/files/..."
+  if (!url) return '';
+  if (/^https?:\/\//i.test(url)) return url;
+  return url.startsWith('/') ? url : `/${url}`;
+}
 
 export function DocumentViewer({
   documentUrl,
@@ -40,6 +44,8 @@ export function DocumentViewer({
 
   const currentStep = steps.find((s) => s.id === currentUserStepId);
   const currentStepIndex = currentStep?.order_index;
+
+  const resolvedUrl = useMemo(() => resolveDocumentUrl(documentUrl), [documentUrl]);
 
   const handleAddPlacement = useCallback(
     (placement: Omit<SignaturePlacement, 'id'>) => {
@@ -93,7 +99,7 @@ export function DocumentViewer({
         <CardContent className="p-0">
           <div className="h-[600px]">
             <PDFViewer
-              url={DEMO_PDF_URL}
+              url={resolvedUrl}
               placements={placements}
               onPlacementAdd={isEditing ? handleAddPlacement : undefined}
               onPlacementRemove={isEditing ? handleRemovePlacement : undefined}

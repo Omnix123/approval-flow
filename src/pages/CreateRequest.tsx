@@ -7,6 +7,7 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { MOCK_USERS, APPROVAL_CHAIN } from '@/data/mockData';
+import { addRequest } from '@/data/requestStore';
 import { ArrowLeft, Upload, X, Users, FileText, Building2, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
@@ -63,6 +64,17 @@ export default function CreateRequest() {
 
     // Simulate API call
     await new Promise((resolve) => setTimeout(resolve, 1500));
+
+    // Build approver name lookup
+    const approverNames: Record<string, string> = {};
+    availableApprovers.forEach((a) => { approverNames[a.id] = a.name; });
+
+    addRequest(
+      { title, vendorName, requesterId: user?.id || '', requesterName: user?.name || '' },
+      selectedApprovers,
+      approverNames,
+      files
+    );
 
     toast.success('Request created successfully!');
     navigate('/requests');

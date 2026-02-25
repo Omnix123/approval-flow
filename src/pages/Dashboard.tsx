@@ -4,7 +4,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { RequestCard } from '@/components/RequestCard';
-import { MOCK_REQUESTS, MOCK_STEPS } from '@/data/mockData';
+import { getRequests, getSteps } from '@/data/requestStore';
 import {
   Plus,
   FileText,
@@ -18,32 +18,35 @@ import {
 export default function Dashboard() {
   const { user } = useAuth();
 
+  const allRequests = getRequests();
+  const allSteps = getSteps();
+
   // Filter requests and stats based on user role
   const stats = useMemo(() => {
-    const pending = MOCK_REQUESTS.filter(r => r.status === 'PENDING').length;
-    const inProgress = MOCK_REQUESTS.filter(r => r.status === 'IN_PROGRESS').length;
-    const approved = MOCK_REQUESTS.filter(r => r.status === 'APPROVED').length;
-    const returned = MOCK_REQUESTS.filter(r => r.status === 'RETURNED').length;
+    const pending = allRequests.filter(r => r.status === 'PENDING').length;
+    const inProgress = allRequests.filter(r => r.status === 'IN_PROGRESS').length;
+    const approved = allRequests.filter(r => r.status === 'APPROVED').length;
+    const returned = allRequests.filter(r => r.status === 'RETURNED').length;
 
-    return { pending, inProgress, approved, returned, total: MOCK_REQUESTS.length };
-  }, []);
+    return { pending, inProgress, approved, returned, total: allRequests.length };
+  }, [allRequests]);
 
   // Get pending approvals for the current user
   const pendingApprovals = useMemo(() => {
     if (!user) return [];
     
-    return MOCK_REQUESTS.filter(request => {
-      const steps = MOCK_STEPS[request.id] || [];
-      return steps.some(step => 
+    return allRequests.filter(request => {
+      const reqSteps = allSteps[request.id] || [];
+      return reqSteps.some(step => 
         step.approver_id === user.id && 
         step.status === 'WAITING' &&
-        (step.order_index === 0 || steps[step.order_index - 1]?.status === 'APPROVED')
+        (step.order_index === 0 || reqSteps[step.order_index - 1]?.status === 'APPROVED')
       );
     });
-  }, [user]);
+  }, [user, allRequests, allSteps]);
 
   // Recent requests
-  const recentRequests = MOCK_REQUESTS.slice(0, 4);
+  const recentRequests = allRequests.slice(0, 4);
 
   const statCards = [
     { label: 'Total Requests', value: stats.total, icon: FileText, color: 'text-foreground' },
@@ -112,7 +115,7 @@ export default function Dashboard() {
               <RequestCard
                 key={request.id}
                 request={request}
-                steps={MOCK_STEPS[request.id]}
+                steps={allSteps[request.id]}
               />
             ))}
           </div>
@@ -135,7 +138,7 @@ export default function Dashboard() {
             <RequestCard
               key={request.id}
               request={request}
-              steps={MOCK_STEPS[request.id]}
+              steps={allSteps[request.id]}
             />
           ))}
         </div>

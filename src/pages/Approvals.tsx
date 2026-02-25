@@ -3,40 +3,43 @@ import { Link } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { RequestCard } from '@/components/RequestCard';
-import { MOCK_REQUESTS, MOCK_STEPS } from '@/data/mockData';
+import { getRequests, getSteps } from '@/data/requestStore';
 import { ClipboardCheck, Inbox } from 'lucide-react';
 
 export default function Approvals() {
   const { user } = useAuth();
 
   // Get requests awaiting current user's approval
+  const allRequests = getRequests();
+  const allSteps = getSteps();
+
   const pendingApprovals = useMemo(() => {
     if (!user) return [];
 
-    return MOCK_REQUESTS.filter((request) => {
-      const steps = MOCK_STEPS[request.id] || [];
-      return steps.some(
+    return allRequests.filter((request) => {
+      const reqSteps = allSteps[request.id] || [];
+      return reqSteps.some(
         (step) =>
           step.approver_id === user.id &&
           step.status === 'WAITING' &&
-          (step.order_index === 0 || steps[step.order_index - 1]?.status === 'APPROVED')
+          (step.order_index === 0 || reqSteps[step.order_index - 1]?.status === 'APPROVED')
       );
     });
-  }, [user]);
+  }, [user, allRequests, allSteps]);
 
   // Get requests user has already approved
   const completedApprovals = useMemo(() => {
     if (!user) return [];
 
-    return MOCK_REQUESTS.filter((request) => {
-      const steps = MOCK_STEPS[request.id] || [];
-      return steps.some(
+    return allRequests.filter((request) => {
+      const reqSteps = allSteps[request.id] || [];
+      return reqSteps.some(
         (step) =>
           step.approver_id === user.id &&
           (step.status === 'APPROVED' || step.status === 'RETURNED')
       );
     });
-  }, [user]);
+  }, [user, allRequests, allSteps]);
 
   return (
     <div className="space-y-8 animate-fade-in">
@@ -76,7 +79,7 @@ export default function Approvals() {
               <RequestCard
                 key={request.id}
                 request={request}
-                steps={MOCK_STEPS[request.id]}
+                steps={allSteps[request.id]}
               />
             ))}
           </div>
@@ -92,7 +95,7 @@ export default function Approvals() {
               <RequestCard
                 key={request.id}
                 request={request}
-                steps={MOCK_STEPS[request.id]}
+                steps={allSteps[request.id]}
               />
             ))}
           </div>

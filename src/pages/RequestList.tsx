@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { RequestCard } from '@/components/RequestCard';
-import { MOCK_REQUESTS, MOCK_STEPS } from '@/data/mockData';
+import { getRequests, getSteps } from '@/data/requestStore';
 import { RequestStatus } from '@/types';
 import { Plus, Search, Filter } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -19,9 +19,11 @@ const STATUS_FILTERS: { value: RequestStatus | 'ALL'; label: string }[] = [
 export default function RequestList() {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<RequestStatus | 'ALL'>('ALL');
+  const allRequests = getRequests();
+  const allSteps = getSteps();
 
   const filteredRequests = useMemo(() => {
-    return MOCK_REQUESTS.filter((request) => {
+    return allRequests.filter((request) => {
       // Status filter
       if (statusFilter !== 'ALL' && request.status !== statusFilter) {
         return false;
@@ -39,7 +41,7 @@ export default function RequestList() {
 
       return true;
     });
-  }, [searchQuery, statusFilter]);
+  }, [searchQuery, statusFilter, allRequests]);
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -101,7 +103,7 @@ export default function RequestList() {
             <RequestCard
               key={request.id}
               request={request}
-              steps={MOCK_STEPS[request.id]}
+              steps={allSteps[request.id]}
             />
           ))}
         </div>

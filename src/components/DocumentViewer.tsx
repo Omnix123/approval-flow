@@ -24,10 +24,10 @@ interface DocumentViewerProps {
 }
 
 function resolveDocumentUrl(url: string) {
-  // Support both absolute URLs and app-relative paths like "/files/..."
   if (!url) return '';
   if (/^https?:\/\//i.test(url)) return url;
-  return url.startsWith('/') ? url : `/${url}`;
+  const path = url.startsWith('/') ? url : `/${url}`;
+  return `${window.location.origin}${path}`;
 }
 
 export function DocumentViewer({

@@ -9,7 +9,8 @@ import { StatusBadge } from '@/components/StatusBadge';
 import { ApprovalProgress } from '@/components/ApprovalProgress';
 import { DocumentViewer } from '@/components/DocumentViewer';
 import { SignatureCanvas } from '@/components/SignatureCanvas';
-import { MOCK_REQUESTS, MOCK_STEPS, MOCK_FILES, MOCK_COMMENTS } from '@/data/mockData';
+import { getRequests, getSteps, getFiles } from '@/data/requestStore';
+import { MOCK_COMMENTS } from '@/data/mockData';
 import {
   ArrowLeft,
   FileText,
@@ -44,9 +45,9 @@ export default function RequestDetail() {
   const [activeTab, setActiveTab] = useState('details');
 
   // Find request
-  const request = MOCK_REQUESTS.find((r) => r.id === id);
-  const steps = id ? MOCK_STEPS[id] || [] : [];
-  const files = id ? MOCK_FILES[id] || [] : [];
+  const request = getRequests().find((r) => r.id === id);
+  const steps = id ? (getSteps()[id] || []) : [];
+  const files = id ? (getFiles()[id] || []) : [];
   const comments = id ? MOCK_COMMENTS[id] || [] : [];
 
   // Check if current user can approve

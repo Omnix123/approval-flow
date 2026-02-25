@@ -213,10 +213,12 @@ export default function CreateRequest() {
                     )}
                     onClick={() => toggleApprover(approver.id)}
                   >
-                    <Checkbox
-                      checked={isSelected}
-                      onCheckedChange={() => toggleApprover(approver.id)}
-                    />
+                    <div onClick={(e) => e.stopPropagation()}>
+                      <Checkbox
+                        checked={isSelected}
+                        onCheckedChange={() => toggleApprover(approver.id)}
+                      />
+                    </div>
                     <div className="flex-1">
                       <p className="font-medium">{approver.name}</p>
                       <p className="text-sm text-muted-foreground">

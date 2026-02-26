@@ -9,7 +9,7 @@ import { StatusBadge } from '@/components/StatusBadge';
 import { ApprovalProgress } from '@/components/ApprovalProgress';
 import { DocumentViewer } from '@/components/DocumentViewer';
 import { SignatureCanvas } from '@/components/SignatureCanvas';
-import { getRequests, getSteps, getFiles } from '@/data/requestStore';
+import { getRequests, getSteps, getFiles, useStoreVersion } from '@/data/requestStore';
 import { MOCK_COMMENTS } from '@/data/mockData';
 import {
   ArrowLeft,
@@ -43,6 +43,8 @@ export default function RequestDetail() {
   const [returnMessage, setReturnMessage] = useState('');
   const [signatureDataUrl, setSignatureDataUrl] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState('details');
+  const [selectedFileIndex, setSelectedFileIndex] = useState(0);
+  useStoreVersion();
 
   // Find request
   const request = getRequests().find((r) => r.id === id);
@@ -242,7 +244,11 @@ export default function RequestDetail() {
                             <Button
                               variant="ghost"
                               size="sm"
-                              onClick={() => setActiveTab('document')}
+                              onClick={() => {
+                                const idx = files.findIndex((f2) => f2.id === file.id);
+                                setSelectedFileIndex(idx >= 0 ? idx : 0);
+                                setActiveTab('document');
+                              }}
                             >
                               <Eye className="h-4 w-4 mr-2" />
                               View
@@ -307,7 +313,7 @@ export default function RequestDetail() {
           <div className="grid lg:grid-cols-4 gap-6">
             <div className="lg:col-span-3">
               <DocumentViewer
-                documentUrl={files[0]?.path || ''}
+                documentUrl={files[selectedFileIndex]?.path || files[0]?.path || ''}
                 steps={steps}
                 currentUserStepId={currentUserStep?.id}
                 isEditing={canApprove}

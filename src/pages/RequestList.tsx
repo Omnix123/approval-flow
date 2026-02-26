@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { RequestCard } from '@/components/RequestCard';
-import { getRequests, getSteps } from '@/data/requestStore';
+import { getRequests, getSteps, useStoreVersion } from '@/data/requestStore';
 import { RequestStatus } from '@/types';
 import { Plus, Search, Filter } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -19,6 +19,7 @@ const STATUS_FILTERS: { value: RequestStatus | 'ALL'; label: string }[] = [
 export default function RequestList() {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<RequestStatus | 'ALL'>('ALL');
+  useStoreVersion();
   const allRequests = getRequests();
   const allSteps = getSteps();
 

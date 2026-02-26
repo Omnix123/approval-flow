@@ -3,11 +3,12 @@ import { Link } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { RequestCard } from '@/components/RequestCard';
-import { getRequests, getSteps } from '@/data/requestStore';
+import { getRequests, getSteps, useStoreVersion } from '@/data/requestStore';
 import { ClipboardCheck, Inbox } from 'lucide-react';
 
 export default function Approvals() {
   const { user } = useAuth();
+  useStoreVersion();
 
   // Get requests awaiting current user's approval
   const allRequests = getRequests();

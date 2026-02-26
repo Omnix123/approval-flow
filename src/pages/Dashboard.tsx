@@ -4,7 +4,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { RequestCard } from '@/components/RequestCard';
-import { getRequests, getSteps } from '@/data/requestStore';
+import { getRequests, getSteps, useStoreVersion } from '@/data/requestStore';
 import {
   Plus,
   FileText,
@@ -17,6 +17,7 @@ import {
 
 export default function Dashboard() {
   const { user } = useAuth();
+  useStoreVersion(); // re-render on store changes
 
   const allRequests = getRequests();
   const allSteps = getSteps();

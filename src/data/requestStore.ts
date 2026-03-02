@@ -1,5 +1,5 @@
-import { ProcurementRequest, ApprovalStep, RequestFile } from '@/types';
-import { MOCK_REQUESTS, MOCK_STEPS, MOCK_FILES } from './mockData';
+import { ProcurementRequest, ApprovalStep, RequestFile, Comment } from '@/types';
+import { MOCK_REQUESTS, MOCK_STEPS, MOCK_FILES, MOCK_COMMENTS } from './mockData';
 import { useSyncExternalStore, useCallback } from 'react';
 import { SignaturePlacement } from '@/components/PDFViewer';
 
@@ -7,6 +7,7 @@ import { SignaturePlacement } from '@/components/PDFViewer';
 let requests: ProcurementRequest[] = [...MOCK_REQUESTS];
 let steps: Record<string, ApprovalStep[]> = { ...MOCK_STEPS };
 let files: Record<string, RequestFile[]> = { ...MOCK_FILES };
+let comments: Record<string, Comment[]> = { ...MOCK_COMMENTS };
 let fileBlobs: Record<string, Record<string, string>> = {}; // requestId -> fileId -> blobUrl
 let signaturePlacements: Record<string, SignaturePlacement[]> = {}; // requestId -> placements
 let nextId = requests.length + 1;
@@ -47,6 +48,10 @@ export function getFiles() {
   return files;
 }
 
+export function getComments() {
+  return comments;
+}
+
 export function getFileBlobUrl(requestId: string, fileId: string): string | undefined {
   return fileBlobs[requestId]?.[fileId];
 }
@@ -56,6 +61,105 @@ export function getSignaturePlacements(requestId: string): SignaturePlacement[] 
 }
 
 // --------------- mutations ---------------
+
+/** Sign (approve) the current step for a request */
+export function signStep(
+  requestId: string,
+  stepId: string,
+  signatureDataUrl: string
+) {
+  const reqSteps = steps[requestId];
+  if (!reqSteps) return;
+
+  const stepIndex = reqSteps.findIndex((s) => s.id === stepId);
+  if (stepIndex === -1) return;
+
+  // Update step
+  const updatedSteps = [...reqSteps];
+  updatedSteps[stepIndex] = {
+    ...updatedSteps[stepIndex],
+    status: 'APPROVED',
+    signed_at: new Date().toISOString(),
+    signature_path: signatureDataUrl,
+  };
+
+  steps = { ...steps, [requestId]: updatedSteps };
+
+  // Update request status
+  const allApproved = updatedSteps.every((s) => s.status === 'APPROVED');
+  const anyApproved = updatedSteps.some((s) => s.status === 'APPROVED');
+
+  const reqIndex = requests.findIndex((r) => r.id === requestId);
+  if (reqIndex !== -1) {
+    const updatedRequests = [...requests];
+    updatedRequests[reqIndex] = {
+      ...updatedRequests[reqIndex],
+      status: allApproved ? 'APPROVED' : 'IN_PROGRESS',
+      updated_at: new Date().toISOString(),
+    };
+    requests = updatedRequests;
+  }
+
+  notify();
+}
+
+/** Return (reject) a step with a comment */
+export function returnStep(
+  requestId: string,
+  stepId: string,
+  message: string,
+  fromUserId: string,
+  fromName: string,
+  toUserId: string,
+  toName: string
+) {
+  const reqSteps = steps[requestId];
+  if (!reqSteps) return;
+
+  const stepIndex = reqSteps.findIndex((s) => s.id === stepId);
+  if (stepIndex === -1) return;
+
+  // Update step
+  const updatedSteps = [...reqSteps];
+  updatedSteps[stepIndex] = {
+    ...updatedSteps[stepIndex],
+    status: 'RETURNED',
+    note: message,
+  };
+
+  steps = { ...steps, [requestId]: updatedSteps };
+
+  // Add comment
+  const newComment: Comment = {
+    id: `c-${Date.now()}`,
+    request_id: requestId,
+    from_user_id: fromUserId,
+    from_name: fromName,
+    to_user_id: toUserId,
+    to_name: toName,
+    message,
+    created_at: new Date().toISOString(),
+    step_index: stepIndex,
+  };
+
+  const existingComments = comments[requestId] || [];
+  comments = { ...comments, [requestId]: [...existingComments, newComment] };
+
+  // Update request status
+  const reqIndex = requests.findIndex((r) => r.id === requestId);
+  if (reqIndex !== -1) {
+    const updatedRequests = [...requests];
+    updatedRequests[reqIndex] = {
+      ...updatedRequests[reqIndex],
+      status: 'RETURNED',
+      updated_at: new Date().toISOString(),
+    };
+    requests = updatedRequests;
+  }
+
+  notify();
+}
+
 export function addRequest(
   data: { title: string; vendorName: string; requesterId: string; requesterName: string },
   selectedApproverIds: string[],
@@ -101,7 +205,7 @@ export function addRequest(
     newFiles.push({
       id: fileId,
       request_id: id,
-      path: blobUrl, // use blob URL as path
+      path: blobUrl,
       filename: file.name,
       type: file.type,
     });

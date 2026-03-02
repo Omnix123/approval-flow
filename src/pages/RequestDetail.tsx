@@ -9,29 +9,16 @@ import { StatusBadge } from '@/components/StatusBadge';
 import { ApprovalProgress } from '@/components/ApprovalProgress';
 import { DocumentViewer } from '@/components/DocumentViewer';
 import { SignatureCanvas } from '@/components/SignatureCanvas';
-import { getRequests, getSteps, getFiles, useStoreVersion } from '@/data/requestStore';
-import { MOCK_COMMENTS } from '@/data/mockData';
 import {
-  ArrowLeft,
-  FileText,
-  Building2,
-  Calendar,
-  User,
-  Download,
-  Pen,
-  RotateCcw,
-  MessageSquare,
-  CheckCircle,
-  AlertCircle,
-  Eye,
+  getRequests, getSteps, getFiles, getComments,
+  getSignaturePlacements, useStoreVersion, signStep, returnStep,
+} from '@/data/requestStore';
+import {
+  ArrowLeft, FileText, Building2, Calendar, User, Download,
+  Pen, RotateCcw, MessageSquare, CheckCircle, AlertCircle, Eye,
 } from 'lucide-react';
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
 import { toast } from 'sonner';
 
@@ -46,13 +33,13 @@ export default function RequestDetail() {
   const [selectedFileIndex, setSelectedFileIndex] = useState(0);
   useStoreVersion();
 
-  // Find request
   const request = getRequests().find((r) => r.id === id);
   const steps = id ? (getSteps()[id] || []) : [];
   const files = id ? (getFiles()[id] || []) : [];
-  const comments = id ? MOCK_COMMENTS[id] || [] : [];
+  const comments = id ? (getComments()[id] || []) : [];
+  const placements = id ? getSignaturePlacements(id) : [];
 
-  // Check if current user can approve
+  // Check if current user can approve (sequential: previous must be APPROVED)
   const currentUserStep = useMemo(() => {
     if (!user) return null;
     return steps.find(
@@ -67,19 +54,16 @@ export default function RequestDetail() {
 
   const formatDate = (dateStr: string) => {
     return new Date(dateStr).toLocaleDateString('en-GB', {
-      day: '2-digit',
-      month: 'long',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
+      day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit',
     });
   };
 
   const handleSign = () => {
-    if (!signatureDataUrl) {
+    if (!signatureDataUrl || !id || !currentUserStep) {
       toast.error('Please draw your signature first');
       return;
     }
+    signStep(id, currentUserStep.id, signatureDataUrl);
     toast.success('Document signed successfully!');
     setSignDialogOpen(false);
     setSignatureDataUrl(null);
@@ -90,6 +74,16 @@ export default function RequestDetail() {
       toast.error('Please provide a reason for returning the document');
       return;
     }
+    if (!id || !currentUserStep || !user || !request) return;
+    returnStep(
+      id,
+      currentUserStep.id,
+      returnMessage,
+      user.id,
+      user.name,
+      request.requester_id,
+      request.requester_name || 'Requester'
+    );
     toast.success('Document returned to requester');
     setReturnDialogOpen(false);
     setReturnMessage('');
@@ -100,10 +94,7 @@ export default function RequestDetail() {
       <div className="text-center py-12">
         <p className="text-muted-foreground">Request not found</p>
         <Button asChild className="mt-4" variant="outline">
-          <Link to="/requests">
-            <ArrowLeft className="mr-2 h-4 w-4" />
-            Back to Requests
-          </Link>
+          <Link to="/requests"><ArrowLeft className="mr-2 h-4 w-4" />Back to Requests</Link>
         </Button>
       </div>
     );
@@ -114,9 +105,7 @@ export default function RequestDetail() {
       {/* Header */}
       <div className="flex items-start gap-4">
         <Button variant="ghost" size="icon" asChild>
-          <Link to="/requests">
-            <ArrowLeft className="h-5 w-5" />
-          </Link>
+          <Link to="/requests"><ArrowLeft className="h-5 w-5" /></Link>
         </Button>
         <div className="flex-1">
           <div className="flex flex-wrap items-center gap-3 mb-2">
@@ -138,12 +127,10 @@ export default function RequestDetail() {
               </div>
               <div className="flex flex-wrap gap-3">
                 <Button onClick={() => setSignDialogOpen(true)}>
-                  <Pen className="mr-2 h-4 w-4" />
-                  Sign Document
+                  <Pen className="mr-2 h-4 w-4" />Sign Document
                 </Button>
                 <Button variant="outline" onClick={() => setReturnDialogOpen(true)}>
-                  <RotateCcw className="mr-2 h-4 w-4" />
-                  Return
+                  <RotateCcw className="mr-2 h-4 w-4" />Return
                 </Button>
               </div>
             </div>
@@ -154,68 +141,36 @@ export default function RequestDetail() {
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList className="grid w-full grid-cols-2 lg:w-auto lg:inline-grid">
-          <TabsTrigger value="details" className="gap-2">
-            <FileText className="h-4 w-4" />
-            Details
-          </TabsTrigger>
-          <TabsTrigger value="document" className="gap-2">
-            <Eye className="h-4 w-4" />
-            View Document
-          </TabsTrigger>
+          <TabsTrigger value="details" className="gap-2"><FileText className="h-4 w-4" />Details</TabsTrigger>
+          <TabsTrigger value="document" className="gap-2"><Eye className="h-4 w-4" />View Document</TabsTrigger>
         </TabsList>
 
         {/* Details Tab */}
         <TabsContent value="details" className="mt-6">
           <div className="grid lg:grid-cols-3 gap-6">
-            {/* Main Content */}
             <div className="lg:col-span-2 space-y-6">
               {/* Request Details */}
               <Card>
-                <CardHeader>
-                  <CardTitle className="text-lg">Request Details</CardTitle>
-                </CardHeader>
+                <CardHeader><CardTitle className="text-lg">Request Details</CardTitle></CardHeader>
                 <CardContent className="space-y-4">
                   <div className="grid sm:grid-cols-2 gap-4">
                     <div className="flex items-center gap-3">
-                      <div className="p-2 rounded-lg bg-secondary">
-                        <User className="h-4 w-4 text-muted-foreground" />
-                      </div>
-                      <div>
-                        <p className="text-sm text-muted-foreground">Requester</p>
-                        <p className="font-medium">{request.requester_name}</p>
-                      </div>
+                      <div className="p-2 rounded-lg bg-secondary"><User className="h-4 w-4 text-muted-foreground" /></div>
+                      <div><p className="text-sm text-muted-foreground">Requester</p><p className="font-medium">{request.requester_name}</p></div>
                     </div>
-
                     {request.vendor_name && (
                       <div className="flex items-center gap-3">
-                        <div className="p-2 rounded-lg bg-secondary">
-                          <Building2 className="h-4 w-4 text-muted-foreground" />
-                        </div>
-                        <div>
-                          <p className="text-sm text-muted-foreground">Vendor</p>
-                          <p className="font-medium">{request.vendor_name}</p>
-                        </div>
+                        <div className="p-2 rounded-lg bg-secondary"><Building2 className="h-4 w-4 text-muted-foreground" /></div>
+                        <div><p className="text-sm text-muted-foreground">Vendor</p><p className="font-medium">{request.vendor_name}</p></div>
                       </div>
                     )}
-
                     <div className="flex items-center gap-3">
-                      <div className="p-2 rounded-lg bg-secondary">
-                        <Calendar className="h-4 w-4 text-muted-foreground" />
-                      </div>
-                      <div>
-                        <p className="text-sm text-muted-foreground">Created</p>
-                        <p className="font-medium">{formatDate(request.created_at)}</p>
-                      </div>
+                      <div className="p-2 rounded-lg bg-secondary"><Calendar className="h-4 w-4 text-muted-foreground" /></div>
+                      <div><p className="text-sm text-muted-foreground">Created</p><p className="font-medium">{formatDate(request.created_at)}</p></div>
                     </div>
-
                     <div className="flex items-center gap-3">
-                      <div className="p-2 rounded-lg bg-secondary">
-                        <Calendar className="h-4 w-4 text-muted-foreground" />
-                      </div>
-                      <div>
-                        <p className="text-sm text-muted-foreground">Last Updated</p>
-                        <p className="font-medium">{formatDate(request.updated_at)}</p>
-                      </div>
+                      <div className="p-2 rounded-lg bg-secondary"><Calendar className="h-4 w-4 text-muted-foreground" /></div>
+                      <div><p className="text-sm text-muted-foreground">Last Updated</p><p className="font-medium">{formatDate(request.updated_at)}</p></div>
                     </div>
                   </div>
                 </CardContent>
@@ -223,39 +178,25 @@ export default function RequestDetail() {
 
               {/* Attached Documents */}
               <Card>
-                <CardHeader>
-                  <CardTitle className="text-lg">Attached Documents</CardTitle>
-                </CardHeader>
+                <CardHeader><CardTitle className="text-lg">Attached Documents</CardTitle></CardHeader>
                 <CardContent>
                   {files.length === 0 ? (
                     <p className="text-muted-foreground text-sm">No documents attached</p>
                   ) : (
                     <div className="space-y-2">
                       {files.map((file) => (
-                        <div
-                          key={file.id}
-                          className="flex items-center justify-between p-3 rounded-lg bg-secondary/50 hover:bg-secondary transition-colors"
-                        >
+                        <div key={file.id} className="flex items-center justify-between p-3 rounded-lg bg-secondary/50 hover:bg-secondary transition-colors">
                           <div className="flex items-center gap-3">
                             <FileText className="h-5 w-5 text-primary" />
                             <span className="font-medium">{file.filename}</span>
                           </div>
                           <div className="flex items-center gap-2">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => {
-                                const idx = files.findIndex((f2) => f2.id === file.id);
-                                setSelectedFileIndex(idx >= 0 ? idx : 0);
-                                setActiveTab('document');
-                              }}
-                            >
-                              <Eye className="h-4 w-4 mr-2" />
-                              View
-                            </Button>
-                            <Button variant="ghost" size="sm">
-                              <Download className="h-4 w-4 mr-2" />
-                              Download
+                            <Button variant="ghost" size="sm" onClick={() => {
+                              const idx = files.findIndex((f2) => f2.id === file.id);
+                              setSelectedFileIndex(idx >= 0 ? idx : 0);
+                              setActiveTab('document');
+                            }}>
+                              <Eye className="h-4 w-4 mr-2" />View
                             </Button>
                           </div>
                         </div>
@@ -270,21 +211,15 @@ export default function RequestDetail() {
                 <Card>
                   <CardHeader>
                     <CardTitle className="text-lg flex items-center gap-2">
-                      <MessageSquare className="h-5 w-5" />
-                      Comments
+                      <MessageSquare className="h-5 w-5" />Comments
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-4">
                     {comments.map((comment) => (
-                      <div
-                        key={comment.id}
-                        className="p-4 rounded-lg bg-destructive/10 border border-destructive/20"
-                      >
+                      <div key={comment.id} className="p-4 rounded-lg bg-destructive/10 border border-destructive/20">
                         <div className="flex items-center justify-between mb-2">
                           <p className="font-medium text-destructive">{comment.from_name}</p>
-                          <p className="text-xs text-muted-foreground">
-                            {formatDate(comment.created_at)}
-                          </p>
+                          <p className="text-xs text-muted-foreground">{formatDate(comment.created_at)}</p>
                         </div>
                         <p className="text-sm">{comment.message}</p>
                       </div>
@@ -297,12 +232,8 @@ export default function RequestDetail() {
             {/* Sidebar - Approval Progress */}
             <div className="space-y-6">
               <Card>
-                <CardHeader>
-                  <CardTitle className="text-lg">Approval Progress</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <ApprovalProgress steps={steps} />
-                </CardContent>
+                <CardHeader><CardTitle className="text-lg">Approval Progress</CardTitle></CardHeader>
+                <CardContent><ApprovalProgress steps={steps} /></CardContent>
               </Card>
             </div>
           </div>
@@ -312,62 +243,57 @@ export default function RequestDetail() {
         <TabsContent value="document" className="mt-6">
           <div className="grid lg:grid-cols-4 gap-6">
             <div className="lg:col-span-3">
+              {/* File selector when multiple files */}
+              {files.length > 1 && (
+                <div className="flex gap-2 mb-4">
+                  {files.map((file, idx) => (
+                    <Button
+                      key={file.id}
+                      variant={selectedFileIndex === idx ? 'default' : 'outline'}
+                      size="sm"
+                      onClick={() => setSelectedFileIndex(idx)}
+                    >
+                      <FileText className="h-4 w-4 mr-1" />{file.filename}
+                    </Button>
+                  ))}
+                </div>
+              )}
               <DocumentViewer
-                documentUrl={files[selectedFileIndex]?.path || files[0]?.path || ''}
+                documentUrl={files[selectedFileIndex]?.path || ''}
                 steps={steps}
                 currentUserStepId={currentUserStep?.id}
-                isEditing={canApprove}
-                onSign={(signatureData, placements) => {
-                  toast.success('Document signed with ' + placements.length + ' signature placements');
-                }}
+                isEditing={false}
+                placements={placements}
               />
             </div>
             <div className="space-y-6">
               <Card>
-                <CardHeader>
-                  <CardTitle className="text-lg">Approval Progress</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <ApprovalProgress steps={steps} />
-                </CardContent>
+                <CardHeader><CardTitle className="text-lg">Approval Progress</CardTitle></CardHeader>
+                <CardContent><ApprovalProgress steps={steps} /></CardContent>
               </Card>
             </div>
           </div>
         </TabsContent>
       </Tabs>
 
-      {/* Sign Dialog with Signature Canvas */}
+      {/* Sign Dialog */}
       <Dialog open={signDialogOpen} onOpenChange={setSignDialogOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle>Sign Document</DialogTitle>
-            <DialogDescription>
-              Draw your signature below to approve this procurement request.
-            </DialogDescription>
+            <DialogDescription>Draw your signature below to approve this procurement request.</DialogDescription>
           </DialogHeader>
-
           <div className="py-4">
-            <SignatureCanvas
-              onSignatureChange={setSignatureDataUrl}
-              width={400}
-              height={150}
-            />
+            <SignatureCanvas onSignatureChange={setSignatureDataUrl} width={400} height={150} />
           </div>
-
           <div className="flex items-center gap-2 p-3 bg-muted/50 rounded-lg text-sm">
             <CheckCircle className="h-4 w-4 text-success shrink-0" />
-            <span>
-              By signing, you confirm you have reviewed and approve all attached documents.
-            </span>
+            <span>By signing, you confirm you have reviewed and approve all attached documents.</span>
           </div>
-
           <DialogFooter>
-            <Button variant="outline" onClick={() => setSignDialogOpen(false)}>
-              Cancel
-            </Button>
+            <Button variant="outline" onClick={() => setSignDialogOpen(false)}>Cancel</Button>
             <Button onClick={handleSign} disabled={!signatureDataUrl}>
-              <Pen className="mr-2 h-4 w-4" />
-              Confirm Signature
+              <Pen className="mr-2 h-4 w-4" />Confirm Signature
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -378,9 +304,7 @@ export default function RequestDetail() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Return for Revision</DialogTitle>
-            <DialogDescription>
-              Please provide a reason why this request needs to be revised.
-            </DialogDescription>
+            <DialogDescription>Please provide a reason why this request needs to be revised.</DialogDescription>
           </DialogHeader>
           <div className="py-4">
             <Textarea
@@ -391,12 +315,9 @@ export default function RequestDetail() {
             />
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setReturnDialogOpen(false)}>
-              Cancel
-            </Button>
+            <Button variant="outline" onClick={() => setReturnDialogOpen(false)}>Cancel</Button>
             <Button variant="destructive" onClick={handleReturn}>
-              <RotateCcw className="mr-2 h-4 w-4" />
-              Return Document
+              <RotateCcw className="mr-2 h-4 w-4" />Return Document
             </Button>
           </DialogFooter>
         </DialogContent>

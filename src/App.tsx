@@ -11,13 +11,13 @@ import RequestList from "./pages/RequestList";
 import RequestDetail from "./pages/RequestDetail";
 import CreateRequest from "./pages/CreateRequest";
 import Approvals from "./pages/Approvals";
+import SignMobile from "./pages/SignMobile";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading } = useAuth();
-
   if (isLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center">
@@ -25,63 +25,21 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
       </div>
     );
   }
-
-  if (!isAuthenticated) {
-    return <Navigate to="/login" replace />;
-  }
-
+  if (!isAuthenticated) return <Navigate to="/login" replace />;
   return <AppLayout>{children}</AppLayout>;
 }
 
 function AppRoutes() {
   const { isAuthenticated } = useAuth();
-
   return (
     <Routes>
-      <Route
-        path="/login"
-        element={isAuthenticated ? <Navigate to="/" replace /> : <Login />}
-      />
-      <Route
-        path="/"
-        element={
-          <ProtectedRoute>
-            <Dashboard />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/requests"
-        element={
-          <ProtectedRoute>
-            <RequestList />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/requests/:id"
-        element={
-          <ProtectedRoute>
-            <RequestDetail />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/create"
-        element={
-          <ProtectedRoute>
-            <CreateRequest />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/approvals"
-        element={
-          <ProtectedRoute>
-            <Approvals />
-          </ProtectedRoute>
-        }
-      />
+      <Route path="/login" element={isAuthenticated ? <Navigate to="/" replace /> : <Login />} />
+      <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+      <Route path="/requests" element={<ProtectedRoute><RequestList /></ProtectedRoute>} />
+      <Route path="/requests/:id" element={<ProtectedRoute><RequestDetail /></ProtectedRoute>} />
+      <Route path="/create" element={<ProtectedRoute><CreateRequest /></ProtectedRoute>} />
+      <Route path="/approvals" element={<ProtectedRoute><Approvals /></ProtectedRoute>} />
+      <Route path="/sign-mobile/:token" element={<SignMobile />} />
       <Route path="*" element={<NotFound />} />
     </Routes>
   );

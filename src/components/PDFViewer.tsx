@@ -4,8 +4,9 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import {
   ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Loader2,
-  Pen, Trash2, MousePointer,
+  Pen, MousePointer,
 } from 'lucide-react';
+import { ResizablePlacement } from './ResizablePlacement';
 import 'react-pdf/dist/Page/AnnotationLayer.css';
 import 'react-pdf/dist/Page/TextLayer.css';
 
@@ -14,10 +15,10 @@ pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/b
 export interface SignaturePlacement {
   id: string;
   pageNumber: number;
-  x: number; // percentage from left
-  y: number; // percentage from top
-  width: number; // percentage
-  height: number; // percentage
+  x: number;
+  y: number;
+  width: number;
+  height: number;
   label?: string;
   stepIndex?: number;
 }
@@ -34,6 +35,7 @@ interface PDFViewerProps {
   signedOverlays?: SignedOverlay[];
   onPlacementAdd?: (placement: Omit<SignaturePlacement, 'id'>) => void;
   onPlacementRemove?: (id: string) => void;
+  onPlacementResize?: (id: string, width: number, height: number) => void;
   isEditing?: boolean;
   currentStepIndex?: number;
   readOnly?: boolean;
@@ -45,6 +47,7 @@ export function PDFViewer({
   signedOverlays = [],
   onPlacementAdd,
   onPlacementRemove,
+  onPlacementResize,
   isEditing = false,
   currentStepIndex,
   readOnly = false,
@@ -80,14 +83,11 @@ export function PDFViewer({
   const handlePageClick = useCallback(
     (e: React.MouseEvent<HTMLDivElement>) => {
       if (!placementMode || !pageRef.current || !onPlacementAdd) return;
-
       const rect = pageRef.current.getBoundingClientRect();
       const x = ((e.clientX - rect.left) / rect.width) * 100;
       const y = ((e.clientY - rect.top) / rect.height) * 100;
-
       const width = 20;
       const height = 8;
-
       onPlacementAdd({
         pageNumber,
         x: Math.max(0, Math.min(x - width / 2, 100 - width)),
@@ -96,7 +96,6 @@ export function PDFViewer({
         height,
         stepIndex: currentStepIndex,
       });
-
       setPlacementMode(false);
     },
     [placementMode, pageNumber, onPlacementAdd, currentStepIndex]
@@ -183,72 +182,41 @@ export function PDFViewer({
               </Document>
             )}
 
-            {/* Unsigned Placement Overlays */}
+            {/* Placement Overlays */}
             {!!url && !loadError && currentPagePlacements.map((placement) => {
-              // Don't show placement box if there's a signed overlay for this step
-              const isSigned = currentPageSignedOverlays.some(
-                (o) => o.placement.id === placement.id
-              );
-              if (isSigned) return null;
+              const signedOverlay = currentPageSignedOverlays.find((o) => o.placement.id === placement.id);
+              const isSigned = !!signedOverlay;
 
               return (
-                <div
+                <ResizablePlacement
                   key={placement.id}
-                  className={cn(
-                    'absolute border-2 border-dashed rounded transition-all',
-                    placement.stepIndex === currentStepIndex
-                      ? 'border-primary bg-primary/10'
-                      : 'border-muted-foreground/40 bg-muted/20'
-                  )}
-                  style={{
-                    left: `${placement.x}%`,
-                    top: `${placement.y}%`,
-                    width: `${placement.width}%`,
-                    height: `${placement.height}%`,
-                  }}
-                >
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <span className="text-xs font-medium text-muted-foreground">
-                      {placement.label || 'Sign Here'}
-                    </span>
-                  </div>
-                  {isEditing && !readOnly && onPlacementRemove && (
-                    <button
-                      onClick={(e) => { e.stopPropagation(); onPlacementRemove(placement.id); }}
-                      className="absolute -top-2 -right-2 p-1 bg-destructive text-destructive-foreground rounded-full shadow-md hover:bg-destructive/90 transition-colors"
-                    >
-                      <Trash2 className="h-3 w-3" />
-                    </button>
-                  )}
-                </div>
+                  placement={placement}
+                  isEditing={isEditing && !readOnly}
+                  isCurrentStep={placement.stepIndex === currentStepIndex}
+                  isSigned={isSigned}
+                  signedOverlay={signedOverlay}
+                  onRemove={onPlacementRemove}
+                  onResize={onPlacementResize}
+                  containerRef={pageRef as React.RefObject<HTMLDivElement>}
+                />
               );
             })}
 
-            {/* Signed Signature Overlays — render actual signature images */}
-            {!!url && !loadError && currentPageSignedOverlays.map((overlay) => (
-              <div
-                key={`signed-${overlay.placement.id}`}
-                className="absolute border-2 border-success/50 rounded bg-white/80"
-                style={{
-                  left: `${overlay.placement.x}%`,
-                  top: `${overlay.placement.y}%`,
-                  width: `${overlay.placement.width}%`,
-                  height: `${overlay.placement.height}%`,
-                }}
-              >
-                <img
-                  src={overlay.signatureDataUrl}
-                  alt={`Signature by ${overlay.approverName}`}
-                  className="w-full h-full object-contain"
-                  style={{ imageRendering: 'auto' }}
+            {/* Signed overlays without matching placement */}
+            {!!url && !loadError && currentPageSignedOverlays
+              .filter((o) => !currentPagePlacements.find((p) => p.id === o.placement.id))
+              .map((overlay) => (
+                <ResizablePlacement
+                  key={`signed-${overlay.placement.id}`}
+                  placement={overlay.placement}
+                  isEditing={false}
+                  isCurrentStep={false}
+                  isSigned={true}
+                  signedOverlay={overlay}
+                  containerRef={pageRef as React.RefObject<HTMLDivElement>}
                 />
-                <div className="absolute -bottom-5 left-0 right-0 text-center">
-                  <span className="text-[10px] font-medium text-success bg-white/80 px-1 rounded">
-                    ✓ {overlay.approverName}
-                  </span>
-                </div>
-              </div>
-            ))}
+              ))
+            }
           </div>
         </div>
       </div>

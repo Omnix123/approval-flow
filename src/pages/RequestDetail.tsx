@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
@@ -39,7 +39,6 @@ export default function RequestDetail() {
   const comments = id ? (getComments()[id] || []) : [];
   const placements = id ? getSignaturePlacements(id) : [];
 
-  // Check if current user can approve (sequential: previous must be APPROVED)
   const currentUserStep = useMemo(() => {
     if (!user) return null;
     return steps.find(
@@ -52,11 +51,23 @@ export default function RequestDetail() {
 
   const canApprove = !!currentUserStep;
 
-  const formatDate = (dateStr: string) => {
-    return new Date(dateStr).toLocaleDateString('en-GB', {
+  // Listen for QR code signatures via BroadcastChannel
+  useEffect(() => {
+    const bc = new BroadcastChannel('ema_qr_signing');
+    bc.onmessage = (event) => {
+      const { token, signatureDataUrl: sigData } = event.data;
+      if (sigData && id && currentUserStep) {
+        signStep(id, currentUserStep.id, sigData);
+        toast.success('Signature received from mobile device!');
+      }
+    };
+    return () => bc.close();
+  }, [id, currentUserStep]);
+
+  const formatDate = (dateStr: string) =>
+    new Date(dateStr).toLocaleDateString('en-GB', {
       day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit',
     });
-  };
 
   const handleSign = () => {
     if (!signatureDataUrl || !id || !currentUserStep) {
@@ -70,20 +81,9 @@ export default function RequestDetail() {
   };
 
   const handleReturn = () => {
-    if (!returnMessage.trim()) {
-      toast.error('Please provide a reason for returning the document');
-      return;
-    }
+    if (!returnMessage.trim()) { toast.error('Please provide a reason'); return; }
     if (!id || !currentUserStep || !user || !request) return;
-    returnStep(
-      id,
-      currentUserStep.id,
-      returnMessage,
-      user.id,
-      user.name,
-      request.requester_id,
-      request.requester_name || 'Requester'
-    );
+    returnStep(id, currentUserStep.id, returnMessage, user.id, user.name, request.requester_id, request.requester_name || 'Requester');
     toast.success('Document returned to requester');
     setReturnDialogOpen(false);
     setReturnMessage('');
@@ -102,11 +102,8 @@ export default function RequestDetail() {
 
   return (
     <div className="space-y-6 animate-fade-in">
-      {/* Header */}
       <div className="flex items-start gap-4">
-        <Button variant="ghost" size="icon" asChild>
-          <Link to="/requests"><ArrowLeft className="h-5 w-5" /></Link>
-        </Button>
+        <Button variant="ghost" size="icon" asChild><Link to="/requests"><ArrowLeft className="h-5 w-5" /></Link></Button>
         <div className="flex-1">
           <div className="flex flex-wrap items-center gap-3 mb-2">
             <h1 className="text-2xl font-bold text-foreground">{request.title}</h1>
@@ -116,7 +113,6 @@ export default function RequestDetail() {
         </div>
       </div>
 
-      {/* Action Banner for Approvers */}
       {canApprove && (
         <Card className="border-primary/30 bg-primary/5">
           <CardContent className="py-4">
@@ -126,30 +122,23 @@ export default function RequestDetail() {
                 <p className="font-medium">Your signature is required for this document</p>
               </div>
               <div className="flex flex-wrap gap-3">
-                <Button onClick={() => setSignDialogOpen(true)}>
-                  <Pen className="mr-2 h-4 w-4" />Sign Document
-                </Button>
-                <Button variant="outline" onClick={() => setReturnDialogOpen(true)}>
-                  <RotateCcw className="mr-2 h-4 w-4" />Return
-                </Button>
+                <Button onClick={() => setSignDialogOpen(true)}><Pen className="mr-2 h-4 w-4" />Sign Document</Button>
+                <Button variant="outline" onClick={() => setReturnDialogOpen(true)}><RotateCcw className="mr-2 h-4 w-4" />Return</Button>
               </div>
             </div>
           </CardContent>
         </Card>
       )}
 
-      {/* Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList className="grid w-full grid-cols-2 lg:w-auto lg:inline-grid">
           <TabsTrigger value="details" className="gap-2"><FileText className="h-4 w-4" />Details</TabsTrigger>
           <TabsTrigger value="document" className="gap-2"><Eye className="h-4 w-4" />View Document</TabsTrigger>
         </TabsList>
 
-        {/* Details Tab */}
         <TabsContent value="details" className="mt-6">
           <div className="grid lg:grid-cols-3 gap-6">
             <div className="lg:col-span-2 space-y-6">
-              {/* Request Details */}
               <Card>
                 <CardHeader><CardTitle className="text-lg">Request Details</CardTitle></CardHeader>
                 <CardContent className="space-y-4">
@@ -176,7 +165,6 @@ export default function RequestDetail() {
                 </CardContent>
               </Card>
 
-              {/* Attached Documents */}
               <Card>
                 <CardHeader><CardTitle className="text-lg">Attached Documents</CardTitle></CardHeader>
                 <CardContent>
@@ -190,15 +178,13 @@ export default function RequestDetail() {
                             <FileText className="h-5 w-5 text-primary" />
                             <span className="font-medium">{file.filename}</span>
                           </div>
-                          <div className="flex items-center gap-2">
-                            <Button variant="ghost" size="sm" onClick={() => {
-                              const idx = files.findIndex((f2) => f2.id === file.id);
-                              setSelectedFileIndex(idx >= 0 ? idx : 0);
-                              setActiveTab('document');
-                            }}>
-                              <Eye className="h-4 w-4 mr-2" />View
-                            </Button>
-                          </div>
+                          <Button variant="ghost" size="sm" onClick={() => {
+                            const idx = files.findIndex((f2) => f2.id === file.id);
+                            setSelectedFileIndex(idx >= 0 ? idx : 0);
+                            setActiveTab('document');
+                          }}>
+                            <Eye className="h-4 w-4 mr-2" />View
+                          </Button>
                         </div>
                       ))}
                     </div>
@@ -206,14 +192,9 @@ export default function RequestDetail() {
                 </CardContent>
               </Card>
 
-              {/* Comments */}
               {comments.length > 0 && (
                 <Card>
-                  <CardHeader>
-                    <CardTitle className="text-lg flex items-center gap-2">
-                      <MessageSquare className="h-5 w-5" />Comments
-                    </CardTitle>
-                  </CardHeader>
+                  <CardHeader><CardTitle className="text-lg flex items-center gap-2"><MessageSquare className="h-5 w-5" />Comments</CardTitle></CardHeader>
                   <CardContent className="space-y-4">
                     {comments.map((comment) => (
                       <div key={comment.id} className="p-4 rounded-lg bg-destructive/10 border border-destructive/20">
@@ -229,7 +210,6 @@ export default function RequestDetail() {
               )}
             </div>
 
-            {/* Sidebar - Approval Progress */}
             <div className="space-y-6">
               <Card>
                 <CardHeader><CardTitle className="text-lg">Approval Progress</CardTitle></CardHeader>
@@ -239,20 +219,13 @@ export default function RequestDetail() {
           </div>
         </TabsContent>
 
-        {/* Document Tab */}
         <TabsContent value="document" className="mt-6">
           <div className="grid lg:grid-cols-4 gap-6">
             <div className="lg:col-span-3">
-              {/* File selector when multiple files */}
               {files.length > 1 && (
                 <div className="flex gap-2 mb-4">
                   {files.map((file, idx) => (
-                    <Button
-                      key={file.id}
-                      variant={selectedFileIndex === idx ? 'default' : 'outline'}
-                      size="sm"
-                      onClick={() => setSelectedFileIndex(idx)}
-                    >
+                    <Button key={file.id} variant={selectedFileIndex === idx ? 'default' : 'outline'} size="sm" onClick={() => setSelectedFileIndex(idx)}>
                       <FileText className="h-4 w-4 mr-1" />{file.filename}
                     </Button>
                   ))}
@@ -262,8 +235,14 @@ export default function RequestDetail() {
                 documentUrl={files[selectedFileIndex]?.path || ''}
                 steps={steps}
                 currentUserStepId={currentUserStep?.id}
+                onSign={(sigData) => {
+                  if (!id || !currentUserStep) return;
+                  signStep(id, currentUserStep.id, sigData);
+                  toast.success('Document signed successfully!');
+                }}
                 isEditing={false}
                 placements={placements}
+                requestId={id}
               />
             </div>
             <div className="space-y-6">
@@ -292,9 +271,7 @@ export default function RequestDetail() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setSignDialogOpen(false)}>Cancel</Button>
-            <Button onClick={handleSign} disabled={!signatureDataUrl}>
-              <Pen className="mr-2 h-4 w-4" />Confirm Signature
-            </Button>
+            <Button onClick={handleSign} disabled={!signatureDataUrl}><Pen className="mr-2 h-4 w-4" />Confirm Signature</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -307,18 +284,11 @@ export default function RequestDetail() {
             <DialogDescription>Please provide a reason why this request needs to be revised.</DialogDescription>
           </DialogHeader>
           <div className="py-4">
-            <Textarea
-              placeholder="Describe what needs to be corrected..."
-              value={returnMessage}
-              onChange={(e) => setReturnMessage(e.target.value)}
-              rows={4}
-            />
+            <Textarea placeholder="Describe what needs to be corrected..." value={returnMessage} onChange={(e) => setReturnMessage(e.target.value)} rows={4} />
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setReturnDialogOpen(false)}>Cancel</Button>
-            <Button variant="destructive" onClick={handleReturn}>
-              <RotateCcw className="mr-2 h-4 w-4" />Return Document
-            </Button>
+            <Button variant="destructive" onClick={handleReturn}><RotateCcw className="mr-2 h-4 w-4" />Return Document</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

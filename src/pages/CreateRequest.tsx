@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef, useCallback, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
@@ -8,11 +8,16 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Checkbox } from '@/components/ui/checkbox';
 import { MOCK_USERS, APPROVAL_CHAIN } from '@/data/mockData';
 import { addRequest } from '@/data/requestStore';
-import { DocumentViewer } from '@/components/DocumentViewer';
 import { SignaturePlacement } from '@/components/PDFViewer';
-import { ArrowLeft, Upload, X, Users, FileText, Building2, Loader2, Pen, ChevronRight, ChevronLeft } from 'lucide-react';
+import { ResizablePlacement } from '@/components/ResizablePlacement';
+import { ArrowLeft, Upload, X, Users, FileText, Building2, Loader2, Pen, ChevronRight, ChevronLeft, MousePointer, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
+import { Document, Page, pdfjs } from 'react-pdf';
+import { ZoomIn, ZoomOut, ChevronLeft as CLeft, ChevronRight as CRight, Loader2 as Spin } from 'lucide-react';
+import 'react-pdf/dist/Page/AnnotationLayer.css';
+import 'react-pdf/dist/Page/TextLayer.css';
+import mammoth from 'mammoth';
 
 type WizardStep = 'details' | 'approvers' | 'signatures';
 
@@ -22,29 +27,52 @@ export default function CreateRequest() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [wizardStep, setWizardStep] = useState<WizardStep>('details');
 
-  // Form state
   const [title, setTitle] = useState('');
   const [vendorName, setVendorName] = useState('');
   const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
   const [selectedApprovers, setSelectedApprovers] = useState<string[]>([]);
   const [placements, setPlacements] = useState<SignaturePlacement[]>([]);
-
-  // Blob URL for previewing uploaded file
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
-  // Available approvers (exclude current user)
   const availableApprovers = MOCK_USERS.filter(
     (u) => u.id !== user?.id && (u.role === 'approver' || u.role === 'admin')
   );
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files) {
-      const newFiles = Array.from(e.target.files);
-      setUploadedFiles((prev) => [...prev, ...newFiles]);
-      // Set preview to the first PDF
+  const convertDocxToPdfBlob = async (file: File): Promise<string> => {
+    const arrayBuffer = await file.arrayBuffer();
+    const result = await mammoth.convertToHtml({ arrayBuffer });
+    // Create an HTML page and convert to blob URL for display
+    const html = `<!DOCTYPE html><html><head><style>
+      body { font-family: Arial, sans-serif; padding: 40px; max-width: 800px; margin: 0 auto; line-height: 1.6; }
+      table { border-collapse: collapse; width: 100%; } td, th { border: 1px solid #ddd; padding: 8px; }
+      img { max-width: 100%; }
+    </style></head><body>${result.value}</body></html>`;
+    const blob = new Blob([html], { type: 'text/html' });
+    return URL.createObjectURL(blob);
+  };
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files) return;
+    const newFiles = Array.from(e.target.files);
+    setUploadedFiles((prev) => [...prev, ...newFiles]);
+
+    // Set preview for first viewable file
+    if (!previewUrl) {
       const firstPdf = newFiles.find((f) => f.type === 'application/pdf');
-      if (firstPdf && !previewUrl) {
+      if (firstPdf) {
         setPreviewUrl(URL.createObjectURL(firstPdf));
+      } else {
+        const firstDocx = newFiles.find((f) =>
+          f.name.endsWith('.docx') || f.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+        );
+        if (firstDocx) {
+          try {
+            const url = await convertDocxToPdfBlob(firstDocx);
+            setPreviewUrl(url);
+          } catch {
+            toast.error('Could not preview Word document');
+          }
+        }
       }
     }
   };
@@ -52,19 +80,14 @@ export default function CreateRequest() {
   const removeFile = (index: number) => {
     setUploadedFiles((prev) => {
       const updated = prev.filter((_, i) => i !== index);
-      // Reset preview if no PDFs left
-      if (updated.filter((f) => f.type === 'application/pdf').length === 0) {
-        setPreviewUrl(null);
-      }
+      if (updated.length === 0) setPreviewUrl(null);
       return updated;
     });
   };
 
   const toggleApprover = (approverId: string) => {
     setSelectedApprovers((prev) =>
-      prev.includes(approverId)
-        ? prev.filter((id) => id !== approverId)
-        : [...prev, approverId]
+      prev.includes(approverId) ? prev.filter((id) => id !== approverId) : [...prev, approverId]
     );
   };
 
@@ -83,31 +106,39 @@ export default function CreateRequest() {
     toast.success('Signature position removed');
   };
 
-  const canGoToApprovers = title.trim().length > 0;
-  const canGoToSignatures = selectedApprovers.length > 0 && uploadedFiles.some((f) => f.type === 'application/pdf');
-  const hasPdf = uploadedFiles.some((f) => f.type === 'application/pdf');
+  const handleResizePlacement = (id: string, width: number, height: number) => {
+    setPlacements((prev) => prev.map((p) => p.id === id ? { ...p, width, height } : p));
+  };
 
-  const goNext = () => {
+  const hasViewableFile = uploadedFiles.some(
+    (f) => f.type === 'application/pdf' || f.name.endsWith('.docx') ||
+      f.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+  );
+  const canGoToApprovers = title.trim().length > 0;
+
+  const goNext = async () => {
     if (wizardStep === 'details') {
-      if (!title.trim()) {
-        toast.error('Please enter a request title');
-        return;
-      }
+      if (!title.trim()) { toast.error('Please enter a request title'); return; }
       setWizardStep('approvers');
     } else if (wizardStep === 'approvers') {
-      if (selectedApprovers.length === 0) {
-        toast.error('Please select at least one approver');
-        return;
-      }
-      if (!hasPdf) {
-        // Skip signature placement if no PDF uploaded
+      if (selectedApprovers.length === 0) { toast.error('Please select at least one approver'); return; }
+      if (!hasViewableFile) {
         handleSubmit();
         return;
       }
-      // Ensure preview URL exists for the first PDF
       if (!previewUrl) {
         const firstPdf = uploadedFiles.find((f) => f.type === 'application/pdf');
-        if (firstPdf) setPreviewUrl(URL.createObjectURL(firstPdf));
+        if (firstPdf) {
+          setPreviewUrl(URL.createObjectURL(firstPdf));
+        } else {
+          const firstDocx = uploadedFiles.find((f) => f.name.endsWith('.docx'));
+          if (firstDocx) {
+            try {
+              const url = await convertDocxToPdfBlob(firstDocx);
+              setPreviewUrl(url);
+            } catch { /* skip */ }
+          }
+        }
       }
       setWizardStep('signatures');
     }
@@ -137,7 +168,6 @@ export default function CreateRequest() {
     navigate('/requests');
   };
 
-  // Build mock steps for the DocumentViewer during placement
   const mockSteps = selectedApprovers.map((approverId, index) => {
     const approver = availableApprovers.find((a) => a.id === approverId);
     return {
@@ -155,9 +185,7 @@ export default function CreateRequest() {
       {/* Header */}
       <div className="flex items-center gap-4">
         <Button variant="ghost" size="icon" asChild>
-          <Link to="/">
-            <ArrowLeft className="h-5 w-5" />
-          </Link>
+          <Link to="/"><ArrowLeft className="h-5 w-5" /></Link>
         </Button>
         <div>
           <h1 className="text-2xl font-bold text-foreground">New Procurement Request</h1>
@@ -178,9 +206,7 @@ export default function CreateRequest() {
               wizardStep === step ? 'bg-primary text-primary-foreground' :
               (['details', 'approvers', 'signatures'].indexOf(wizardStep) > i)
                 ? 'bg-primary/20 text-primary' : 'bg-secondary text-muted-foreground'
-            )}>
-              {i + 1}
-            </div>
+            )}>{i + 1}</div>
             {i < 2 && <div className={cn('w-12 h-0.5', (['details', 'approvers', 'signatures'].indexOf(wizardStep) > i) ? 'bg-primary' : 'bg-border')} />}
           </div>
         ))}
@@ -191,54 +217,28 @@ export default function CreateRequest() {
         <div className="space-y-6">
           <Card>
             <CardHeader>
-              <CardTitle className="text-lg flex items-center gap-2">
-                <FileText className="h-5 w-5" />
-                Request Details
-              </CardTitle>
+              <CardTitle className="text-lg flex items-center gap-2"><FileText className="h-5 w-5" />Request Details</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="title">Request Title *</Label>
-                <Input
-                  id="title"
-                  placeholder="e.g., Office Stationery Supplies Q1"
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                />
+                <Input id="title" placeholder="e.g., Office Stationery Supplies Q1" value={title} onChange={(e) => setTitle(e.target.value)} />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="vendor" className="flex items-center gap-2">
-                  <Building2 className="h-4 w-4" />
-                  Vendor Name
-                </Label>
-                <Input
-                  id="vendor"
-                  placeholder="e.g., Office Solutions Ltd"
-                  value={vendorName}
-                  onChange={(e) => setVendorName(e.target.value)}
-                />
+                <Label htmlFor="vendor" className="flex items-center gap-2"><Building2 className="h-4 w-4" />Vendor Name</Label>
+                <Input id="vendor" placeholder="e.g., Office Solutions Ltd" value={vendorName} onChange={(e) => setVendorName(e.target.value)} />
               </div>
             </CardContent>
           </Card>
 
           <Card>
             <CardHeader>
-              <CardTitle className="text-lg flex items-center gap-2">
-                <Upload className="h-5 w-5" />
-                Documents
-              </CardTitle>
-              <CardDescription>Upload the payment requisition form and supporting documents (PDF)</CardDescription>
+              <CardTitle className="text-lg flex items-center gap-2"><Upload className="h-5 w-5" />Documents</CardTitle>
+              <CardDescription>Upload PDF or Word documents</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="border-2 border-dashed border-border rounded-lg p-8 text-center hover:border-primary/50 transition-colors">
-                <input
-                  type="file"
-                  id="file-upload"
-                  multiple
-                  accept=".pdf,.doc,.docx,.xls,.xlsx"
-                  onChange={handleFileChange}
-                  className="hidden"
-                />
+                <input type="file" id="file-upload" multiple accept=".pdf,.doc,.docx,.xls,.xlsx" onChange={handleFileChange} className="hidden" />
                 <label htmlFor="file-upload" className="cursor-pointer">
                   <Upload className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
                   <p className="font-medium">Click to upload or drag and drop</p>
@@ -256,9 +256,7 @@ export default function CreateRequest() {
                           <p className="text-xs text-muted-foreground">{(file.size / 1024 / 1024).toFixed(2)} MB</p>
                         </div>
                       </div>
-                      <Button type="button" variant="ghost" size="icon" onClick={() => removeFile(index)}>
-                        <X className="h-4 w-4" />
-                      </Button>
+                      <Button type="button" variant="ghost" size="icon" onClick={() => removeFile(index)}><X className="h-4 w-4" /></Button>
                     </div>
                   ))}
                 </div>
@@ -272,10 +270,7 @@ export default function CreateRequest() {
       {wizardStep === 'approvers' && (
         <Card>
           <CardHeader>
-            <CardTitle className="text-lg flex items-center gap-2">
-              <Users className="h-5 w-5" />
-              Approval Chain
-            </CardTitle>
+            <CardTitle className="text-lg flex items-center gap-2"><Users className="h-5 w-5" />Approval Chain</CardTitle>
             <CardDescription>Select the approvers in the order they should sign</CardDescription>
           </CardHeader>
           <CardContent>
@@ -285,16 +280,11 @@ export default function CreateRequest() {
                 if (!approver) return null;
                 const isSelected = selectedApprovers.includes(approver.id);
                 const orderIndex = selectedApprovers.indexOf(approver.id);
-
                 return (
-                  <div
-                    key={chainItem.order}
-                    className={cn(
-                      'flex items-center gap-4 p-4 rounded-lg border transition-colors cursor-pointer',
-                      isSelected ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/50'
-                    )}
-                    onClick={() => toggleApprover(approver.id)}
-                  >
+                  <div key={chainItem.order} className={cn(
+                    'flex items-center gap-4 p-4 rounded-lg border transition-colors cursor-pointer',
+                    isSelected ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/50'
+                  )} onClick={() => toggleApprover(approver.id)}>
                     <div onClick={(e) => e.stopPropagation()}>
                       <Checkbox checked={isSelected} onCheckedChange={() => toggleApprover(approver.id)} />
                     </div>
@@ -303,15 +293,12 @@ export default function CreateRequest() {
                       <p className="text-sm text-muted-foreground">{chainItem.role} • {chainItem.department}</p>
                     </div>
                     {isSelected && (
-                      <div className="flex items-center justify-center w-8 h-8 rounded-full bg-primary text-primary-foreground text-sm font-bold">
-                        {orderIndex + 1}
-                      </div>
+                      <div className="flex items-center justify-center w-8 h-8 rounded-full bg-primary text-primary-foreground text-sm font-bold">{orderIndex + 1}</div>
                     )}
                   </div>
                 );
               })}
             </div>
-
             {selectedApprovers.length > 0 && (
               <div className="mt-4 p-3 bg-secondary rounded-lg">
                 <p className="text-sm font-medium mb-2">Approval Order:</p>
@@ -320,8 +307,7 @@ export default function CreateRequest() {
                     const approver = availableApprovers.find((a) => a.id === id);
                     return (
                       <span key={id} className="inline-flex items-center gap-1 px-2 py-1 bg-primary/10 text-primary rounded text-sm">
-                        <span className="font-bold">{index + 1}.</span>
-                        {approver?.name}
+                        <span className="font-bold">{index + 1}.</span>{approver?.name}
                       </span>
                     );
                   })}
@@ -339,7 +325,7 @@ export default function CreateRequest() {
             <CardContent className="py-4">
               <div className="flex items-center gap-2">
                 <Pen className="h-5 w-5 text-primary" />
-                <p className="font-medium">Click "Add Signature" in the toolbar below, then click on the document to place each approver's signature position.</p>
+                <p className="font-medium">Click "Add Signature" in the toolbar, then click on the document to place each approver's signature. Drag the corner to resize.</p>
               </div>
             </CardContent>
           </Card>
@@ -352,6 +338,7 @@ export default function CreateRequest() {
                   placements={placements}
                   onPlacementAdd={handleAddPlacement}
                   onPlacementRemove={handleRemovePlacement}
+                  onPlacementResize={handleResizePlacement}
                   approvers={selectedApprovers.map((id, i) => {
                     const a = availableApprovers.find((u) => u.id === id);
                     return { id, name: a?.name || 'Unknown', index: i };
@@ -363,17 +350,13 @@ export default function CreateRequest() {
 
           {placements.length > 0 && (
             <Card>
-              <CardHeader className="py-3">
-                <CardTitle className="text-sm">Placed Signatures ({placements.length})</CardTitle>
-              </CardHeader>
+              <CardHeader className="py-3"><CardTitle className="text-sm">Placed Signatures ({placements.length})</CardTitle></CardHeader>
               <CardContent className="py-2">
                 <div className="space-y-2">
                   {placements.map((p, i) => (
                     <div key={p.id} className="flex items-center justify-between p-2 bg-secondary/50 rounded-lg text-sm">
-                      <span>{p.label || `Field ${i + 1}`} — Page {p.pageNumber}</span>
-                      <Button variant="ghost" size="sm" onClick={() => handleRemovePlacement(p.id)} className="h-6 text-destructive hover:text-destructive">
-                        Remove
-                      </Button>
+                      <span>{p.label || `Field ${i + 1}`} — Page {p.pageNumber} ({Math.round(p.width)}% × {Math.round(p.height)}%)</span>
+                      <Button variant="ghost" size="sm" onClick={() => handleRemovePlacement(p.id)} className="h-6 text-destructive hover:text-destructive">Remove</Button>
                     </div>
                   ))}
                 </div>
@@ -386,27 +369,17 @@ export default function CreateRequest() {
       {/* Navigation Buttons */}
       <div className="flex gap-4">
         {wizardStep !== 'details' && (
-          <Button type="button" variant="outline" onClick={goBack}>
-            <ChevronLeft className="mr-1 h-4 w-4" />
-            Back
-          </Button>
+          <Button type="button" variant="outline" onClick={goBack}><ChevronLeft className="mr-1 h-4 w-4" />Back</Button>
         )}
         <div className="flex-1" />
-        <Button type="button" variant="outline" onClick={() => navigate('/')}>
-          Cancel
-        </Button>
+        <Button type="button" variant="outline" onClick={() => navigate('/')}>Cancel</Button>
         {wizardStep === 'signatures' ? (
           <Button onClick={handleSubmit} disabled={isSubmitting}>
-            {isSubmitting ? (
-              <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Creating...</>
-            ) : (
-              'Create Request'
-            )}
+            {isSubmitting ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Creating...</> : 'Create Request'}
           </Button>
         ) : (
           <Button onClick={goNext} disabled={wizardStep === 'details' ? !canGoToApprovers : !selectedApprovers.length}>
-            Next
-            <ChevronRight className="ml-1 h-4 w-4" />
+            Next<ChevronRight className="ml-1 h-4 w-4" />
           </Button>
         )}
       </div>
@@ -415,21 +388,16 @@ export default function CreateRequest() {
 }
 
 // Inline component for signature placement on the PDF during creation
-import { Document, Page, pdfjs } from 'react-pdf';
-import { useRef, useCallback, useEffect } from 'react';
-import { ZoomIn, ZoomOut, ChevronLeft as CLeft, ChevronRight as CRight, Loader2 as Spin, MousePointer, Trash2 } from 'lucide-react';
-import 'react-pdf/dist/Page/AnnotationLayer.css';
-import 'react-pdf/dist/Page/TextLayer.css';
-
 interface PlacementViewerProps {
   url: string;
   placements: SignaturePlacement[];
   onPlacementAdd: (p: Omit<SignaturePlacement, 'id'>) => void;
   onPlacementRemove: (id: string) => void;
+  onPlacementResize: (id: string, width: number, height: number) => void;
   approvers: { id: string; name: string; index: number }[];
 }
 
-function SignaturePlacementViewer({ url, placements, onPlacementAdd, onPlacementRemove, approvers }: PlacementViewerProps) {
+function SignaturePlacementViewer({ url, placements, onPlacementAdd, onPlacementRemove, onPlacementResize, approvers }: PlacementViewerProps) {
   const [numPages, setNumPages] = useState(0);
   const [pageNumber, setPageNumber] = useState(1);
   const [scale, setScale] = useState(1);
@@ -465,30 +433,18 @@ function SignaturePlacementViewer({ url, placements, onPlacementAdd, onPlacement
 
   return (
     <div className="flex flex-col h-full bg-muted/30 rounded-lg overflow-hidden">
-      {/* Toolbar */}
       <div className="flex items-center justify-between p-3 bg-card border-b border-border flex-wrap gap-2">
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={() => setPageNumber((p) => Math.max(1, p - 1))} disabled={pageNumber <= 1}>
-            <CLeft className="h-4 w-4" />
-          </Button>
+          <Button variant="outline" size="sm" onClick={() => setPageNumber((p) => Math.max(1, p - 1))} disabled={pageNumber <= 1}><CLeft className="h-4 w-4" /></Button>
           <span className="text-sm text-muted-foreground min-w-[80px] text-center">Page {pageNumber} of {numPages}</span>
-          <Button variant="outline" size="sm" onClick={() => setPageNumber((p) => Math.min(numPages, p + 1))} disabled={pageNumber >= numPages}>
-            <CRight className="h-4 w-4" />
-          </Button>
+          <Button variant="outline" size="sm" onClick={() => setPageNumber((p) => Math.min(numPages, p + 1))} disabled={pageNumber >= numPages}><CRight className="h-4 w-4" /></Button>
         </div>
-
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={() => setScale((s) => Math.max(0.5, s - 0.25))} disabled={scale <= 0.5}>
-            <ZoomOut className="h-4 w-4" />
-          </Button>
+          <Button variant="outline" size="sm" onClick={() => setScale((s) => Math.max(0.5, s - 0.25))} disabled={scale <= 0.5}><ZoomOut className="h-4 w-4" /></Button>
           <span className="text-sm text-muted-foreground min-w-[50px] text-center">{Math.round(scale * 100)}%</span>
-          <Button variant="outline" size="sm" onClick={() => setScale((s) => Math.min(2, s + 0.25))} disabled={scale >= 2}>
-            <ZoomIn className="h-4 w-4" />
-          </Button>
+          <Button variant="outline" size="sm" onClick={() => setScale((s) => Math.min(2, s + 0.25))} disabled={scale >= 2}><ZoomIn className="h-4 w-4" /></Button>
         </div>
-
         <div className="flex items-center gap-2">
-          {/* Approver selector */}
           <select
             className="text-sm border border-border rounded px-2 py-1 bg-card text-foreground"
             value={selectedApproverIdx}
@@ -498,21 +454,12 @@ function SignaturePlacementViewer({ url, placements, onPlacementAdd, onPlacement
               <option key={a.id} value={a.index}>{a.name}</option>
             ))}
           </select>
-          <Button
-            variant={placementMode ? 'default' : 'outline'}
-            size="sm"
-            onClick={() => setPlacementMode(!placementMode)}
-          >
-            {placementMode ? (
-              <><MousePointer className="h-4 w-4 mr-1" />Click to place</>
-            ) : (
-              <><Pen className="h-4 w-4 mr-1" />Add Signature</>
-            )}
+          <Button variant={placementMode ? 'default' : 'outline'} size="sm" onClick={() => setPlacementMode(!placementMode)}>
+            {placementMode ? <><MousePointer className="h-4 w-4 mr-1" />Click to place</> : <><Pen className="h-4 w-4 mr-1" />Add Signature</>}
           </Button>
         </div>
       </div>
 
-      {/* PDF */}
       <div className="flex-1 overflow-auto p-4">
         <div className="flex justify-center">
           <div
@@ -521,37 +468,28 @@ function SignaturePlacementViewer({ url, placements, onPlacementAdd, onPlacement
             onClick={handlePageClick}
           >
             {isLoading && (
-              <div className="absolute inset-0 flex items-center justify-center bg-muted z-10">
-                <Spin className="h-8 w-8 animate-spin text-primary" />
-              </div>
+              <div className="absolute inset-0 flex items-center justify-center bg-muted z-10"><Spin className="h-8 w-8 animate-spin text-primary" /></div>
             )}
             <Document
               file={url}
               onLoadSuccess={({ numPages: n }) => { setNumPages(n); setIsLoading(false); }}
               onLoadError={() => setIsLoading(false)}
-              loading={null}
-              error={null}
-              noData={null}
+              loading={null} error={null} noData={null}
             >
               <Page pageNumber={pageNumber} scale={scale} renderTextLayer={true} renderAnnotationLayer={true} />
             </Document>
 
             {currentPagePlacements.map((p) => (
-              <div
+              <ResizablePlacement
                 key={p.id}
-                className="absolute border-2 rounded border-primary bg-primary/10"
-                style={{ left: `${p.x}%`, top: `${p.y}%`, width: `${p.width}%`, height: `${p.height}%` }}
-              >
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <span className="text-xs font-medium text-muted-foreground">{p.label}</span>
-                </div>
-                <button
-                  onClick={(e) => { e.stopPropagation(); onPlacementRemove(p.id); }}
-                  className="absolute -top-2 -right-2 p-1 bg-destructive text-destructive-foreground rounded-full shadow-md hover:bg-destructive/90 transition-colors"
-                >
-                  <Trash2 className="h-3 w-3" />
-                </button>
-              </div>
+                placement={p}
+                isEditing={true}
+                isCurrentStep={true}
+                isSigned={false}
+                onRemove={onPlacementRemove}
+                onResize={onPlacementResize}
+                containerRef={pageRef as React.RefObject<HTMLDivElement>}
+              />
             ))}
           </div>
         </div>

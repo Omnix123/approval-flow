@@ -1,4 +1,4 @@
-import { useMemo, useState, useCallback } from 'react';
+import { useMemo, useState, useCallback, useEffect, useRef } from 'react';
 import { PDFViewer, SignaturePlacement } from './PDFViewer';
 import { SignatureCanvas } from './SignatureCanvas';
 import { Button } from '@/components/ui/button';
@@ -7,7 +7,7 @@ import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
 import { ApprovalStep } from '@/types';
-import { Check, Pen, FileText, Download, QrCode } from 'lucide-react';
+import { Check, Pen, FileText, Download, QrCode, ExternalLink, Copy } from 'lucide-react';
 import { toast } from 'sonner';
 import { generateSignedPdf } from '@/lib/pdfExport';
 import { createQrToken } from '@/lib/signatureStore';
@@ -45,6 +45,8 @@ export function DocumentViewer({
   const [qrDialogOpen, setQrDialogOpen] = useState(false);
   const [signatureDataUrl, setSignatureDataUrl] = useState<string | null>(null);
   const [isDownloading, setIsDownloading] = useState(false);
+  const [qrToken, setQrToken] = useState<string | null>(null);
+  const qrTokenRef = useRef<string | null>(null);
 
   const currentStep = steps.find((s) => s.id === currentUserStepId);
   const currentStepIndex = currentStep?.order_index;
@@ -75,7 +77,7 @@ export function DocumentViewer({
         label: currentStep ? `${currentStep.approver_name}` : 'Signature',
       };
       setEditPlacements((prev) => [...prev, newPlacement]);
-      toast.success('Signature field added');
+      toast.success('Signature field added — drag the grip handle to reposition it');
     },
     [currentStep]
   );
@@ -87,6 +89,10 @@ export function DocumentViewer({
 
   const handleResizePlacement = useCallback((id: string, width: number, height: number) => {
     setEditPlacements((prev) => prev.map((p) => p.id === id ? { ...p, width, height } : p));
+  }, []);
+
+  const handleMovePlacement = useCallback((id: string, x: number, y: number) => {
+    setEditPlacements((prev) => prev.map((p) => p.id === id ? { ...p, x, y } : p));
   }, []);
 
   const handleSignDocument = () => {
@@ -119,12 +125,45 @@ export function DocumentViewer({
     }
   };
 
-  const qrToken = useMemo(() => {
-    if (!requestId || !currentStep) return null;
-    return createQrToken(requestId, currentStep.id, currentStep.approver_name);
+  // Create QR token only when user clicks "Sign with Phone"
+  const handleOpenQrDialog = useCallback(() => {
+    if (!requestId || !currentStep) return;
+    if (!qrTokenRef.current) {
+      qrTokenRef.current = createQrToken(requestId, currentStep.id, currentStep.approver_name);
+      setQrToken(qrTokenRef.current);
+    }
+    setQrDialogOpen(true);
   }, [requestId, currentStep]);
 
   const qrUrl = qrToken ? `${window.location.origin}/sign-mobile/${qrToken}` : '';
+
+  // Listen for QR signature completion via BroadcastChannel
+  useEffect(() => {
+    if (!qrToken || !currentStep || !requestId) return;
+    const bc = new BroadcastChannel('ema_qr_signing');
+    bc.onmessage = (event) => {
+      const { token, signatureDataUrl: sigData } = event.data;
+      if (token === qrToken && sigData) {
+        onSign?.(sigData, editPlacements);
+        setQrDialogOpen(false);
+        toast.success('Signature received from mobile device!');
+        qrTokenRef.current = null;
+        setQrToken(null);
+      }
+    };
+    return () => bc.close();
+  }, [qrToken, currentStep, requestId, onSign, editPlacements]);
+
+  const handleCopyLink = () => {
+    if (qrUrl) {
+      navigator.clipboard.writeText(qrUrl);
+      toast.success('Link copied! Open it in a new tab or send to your phone');
+    }
+  };
+
+  const handleOpenNewTab = () => {
+    if (qrUrl) window.open(qrUrl, '_blank');
+  };
 
   const canSign = currentUserStepId && currentStep?.status === 'WAITING';
 
@@ -145,7 +184,7 @@ export function DocumentViewer({
               )}
               {canSign && onSign && (
                 <>
-                  <Button size="sm" variant="outline" onClick={() => setQrDialogOpen(true)}>
+                  <Button size="sm" variant="outline" onClick={handleOpenQrDialog}>
                     <QrCode className="h-4 w-4 mr-1" />Sign with Phone
                   </Button>
                   <Button size="sm" onClick={() => setSignDialogOpen(true)}>
@@ -165,6 +204,7 @@ export function DocumentViewer({
               onPlacementAdd={isEditing ? handleAddPlacement : undefined}
               onPlacementRemove={isEditing ? handleRemovePlacement : undefined}
               onPlacementResize={isEditing ? handleResizePlacement : undefined}
+              onPlacementMove={isEditing ? handleMovePlacement : undefined}
               isEditing={isEditing}
               currentStepIndex={currentStepIndex}
               readOnly={!isEditing}
@@ -203,7 +243,7 @@ export function DocumentViewer({
         <DialogContent className="max-w-sm">
           <DialogHeader>
             <DialogTitle>Sign with Phone</DialogTitle>
-            <DialogDescription>Scan this QR code with your phone camera to sign on your mobile device.</DialogDescription>
+            <DialogDescription>Scan this QR code with your phone camera, or use the buttons below.</DialogDescription>
           </DialogHeader>
           <div className="flex justify-center py-6">
             {qrUrl && (
@@ -212,10 +252,19 @@ export function DocumentViewer({
               </div>
             )}
           </div>
-          <p className="text-xs text-center text-muted-foreground">
-            The signature will appear automatically once submitted from your phone.
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" className="flex-1" onClick={handleCopyLink}>
+              <Copy className="h-4 w-4 mr-1" />Copy Link
+            </Button>
+            <Button variant="outline" size="sm" className="flex-1" onClick={handleOpenNewTab}>
+              <ExternalLink className="h-4 w-4 mr-1" />Open in New Tab
+            </Button>
+          </div>
+          <p className="text-xs text-center text-muted-foreground mt-2">
+            Once you sign on the other tab/device, the signature will appear here automatically.
             <br />
-            <span className="font-medium">Note:</span> Both devices must access the same URL for auto-sync.
+            <span className="font-medium">For same-browser tabs</span>, signature syncs instantly.
+            For a phone on the same WiFi, open the link in the phone browser.
           </p>
           <DialogFooter>
             <Button variant="outline" onClick={() => setQrDialogOpen(false)}>Close</Button>

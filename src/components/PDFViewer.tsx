@@ -36,6 +36,7 @@ interface PDFViewerProps {
   onPlacementAdd?: (placement: Omit<SignaturePlacement, 'id'>) => void;
   onPlacementRemove?: (id: string) => void;
   onPlacementResize?: (id: string, width: number, height: number) => void;
+  onPlacementMove?: (id: string, x: number, y: number) => void;
   isEditing?: boolean;
   currentStepIndex?: number;
   readOnly?: boolean;
@@ -48,6 +49,7 @@ export function PDFViewer({
   onPlacementAdd,
   onPlacementRemove,
   onPlacementResize,
+  onPlacementMove,
   isEditing = false,
   currentStepIndex,
   readOnly = false,
@@ -197,6 +199,7 @@ export function PDFViewer({
                   signedOverlay={signedOverlay}
                   onRemove={onPlacementRemove}
                   onResize={onPlacementResize}
+                  onMove={onPlacementMove}
                   containerRef={pageRef as React.RefObject<HTMLDivElement>}
                 />
               );

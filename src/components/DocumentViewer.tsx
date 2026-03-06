@@ -135,6 +135,7 @@ export function DocumentViewer({
     setQrDialogOpen(true);
   }, [requestId, currentStep]);
 
+  // Use current hostname so QR works on local network (e.g. 192.168.x.x:5173)
   const qrUrl = qrToken ? `${window.location.origin}/sign-mobile/${qrToken}` : '';
 
   // Listen for QR signature completion via BroadcastChannel

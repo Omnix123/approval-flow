@@ -10,6 +10,46 @@ import { ResizablePlacement } from './ResizablePlacement';
 import 'react-pdf/dist/Page/AnnotationLayer.css';
 import 'react-pdf/dist/Page/TextLayer.css';
 
+/** Ghost preview that follows the cursor in placement mode */
+function PlacementGhost({ containerRef, visible, width, height }: {
+  containerRef: React.RefObject<HTMLDivElement>;
+  visible: boolean;
+  width: number;
+  height: number;
+}) {
+  const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el || !visible) { setPos(null); return; }
+    const onMove = (e: MouseEvent) => {
+      const rect = el.getBoundingClientRect();
+      const x = ((e.clientX - rect.left) / rect.width) * 100;
+      const y = ((e.clientY - rect.top) / rect.height) * 100;
+      setPos({
+        x: Math.max(0, Math.min(x - width / 2, 100 - width)),
+        y: Math.max(0, Math.min(y - height / 2, 100 - height)),
+      });
+    };
+    const onLeave = () => setPos(null);
+    el.addEventListener('mousemove', onMove);
+    el.addEventListener('mouseleave', onLeave);
+    return () => { el.removeEventListener('mousemove', onMove); el.removeEventListener('mouseleave', onLeave); };
+  }, [containerRef, visible, width, height]);
+
+  if (!visible || !pos) return null;
+  return (
+    <div
+      className="absolute border-2 border-dashed border-primary/60 bg-primary/10 rounded pointer-events-none z-20 transition-none"
+      style={{ left: `${pos.x}%`, top: `${pos.y}%`, width: `${width}%`, height: `${height}%` }}
+    >
+      <div className="absolute inset-0 flex items-center justify-center">
+        <span className="text-xs text-primary/60 font-medium select-none">Sign Here</span>
+      </div>
+    </div>
+  );
+}
+
 pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
 
 export interface SignaturePlacement {
@@ -184,6 +224,9 @@ export function PDFViewer({
               </Document>
             )}
 
+            {/* Ghost preview */}
+            <PlacementGhost containerRef={pageRef as React.RefObject<HTMLDivElement>} visible={placementMode} width={20} height={8} />
+
             {/* Placement Overlays */}
             {!!url && !loadError && currentPagePlacements.map((placement) => {
               const signedOverlay = currentPageSignedOverlays.find((o) => o.placement.id === placement.id);
@@ -205,7 +248,7 @@ export function PDFViewer({
               );
             })}
 
-            {/* Signed overlays without matching placement */}
+            {/* Signed overlays without matching placement — still movable */}
             {!!url && !loadError && currentPageSignedOverlays
               .filter((o) => !currentPagePlacements.find((p) => p.id === o.placement.id))
               .map((overlay) => (
@@ -216,6 +259,7 @@ export function PDFViewer({
                   isCurrentStep={false}
                   isSigned={true}
                   signedOverlay={overlay}
+                  onMove={onPlacementMove}
                   containerRef={pageRef as React.RefObject<HTMLDivElement>}
                 />
               ))

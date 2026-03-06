@@ -115,7 +115,7 @@ export function ResizablePlacement({
   if (isSigned && signedOverlay) {
     return (
       <div
-        className="absolute rounded"
+        className={cn('absolute rounded group', (dragging) && 'ring-2 ring-primary/50')}
         style={{
           left: `${placement.x}%`,
           top: `${placement.y}%`,
@@ -133,6 +133,17 @@ export function ResizablePlacement({
             ✓ {signedOverlay.approverName}
           </span>
         </div>
+        {/* Drag handle for signed signatures */}
+        {onMove && (
+          <div
+            className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 p-0.5 bg-primary text-primary-foreground rounded shadow-md cursor-grab active:cursor-grabbing z-10 opacity-0 group-hover:opacity-100 transition-opacity"
+            onMouseDown={handleDragStart}
+            onTouchStart={handleDragStart}
+            title="Drag to reposition"
+          >
+            <GripVertical className="h-3 w-3" />
+          </div>
+        )}
       </div>
     );
   }

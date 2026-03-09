@@ -398,7 +398,7 @@ interface PlacementViewerProps {
   approvers: { id: string; name: string; index: number }[];
 }
 
-function SignaturePlacementViewer({ url, placements, onPlacementAdd, onPlacementRemove, onPlacementResize, approvers }: PlacementViewerProps) {
+function SignaturePlacementViewer({ url, placements, onPlacementAdd, onPlacementRemove, onPlacementResize, onPlacementMove, approvers }: PlacementViewerProps) {
   const [numPages, setNumPages] = useState(0);
   const [pageNumber, setPageNumber] = useState(1);
   const [scale, setScale] = useState(1);

@@ -47,6 +47,8 @@ export function DocumentViewer({
   const [isDownloading, setIsDownloading] = useState(false);
   const [qrToken, setQrToken] = useState<string | null>(null);
   const qrTokenRef = useRef<string | null>(null);
+  // Track position overrides for signed overlays (so they can be dragged)
+  const [positionOverrides, setPositionOverrides] = useState<Record<string, { x: number; y: number }>>({});
 
   const currentStep = steps.find((s) => s.id === currentUserStepId);
   const currentStepIndex = currentStep?.order_index;

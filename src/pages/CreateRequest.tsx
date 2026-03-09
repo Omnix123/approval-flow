@@ -480,6 +480,9 @@ function SignaturePlacementViewer({ url, placements, onPlacementAdd, onPlacement
               <Page pageNumber={pageNumber} scale={scale} renderTextLayer={true} renderAnnotationLayer={true} />
             </Document>
 
+            {/* Ghost preview that follows the cursor */}
+            {placementMode && <PlacementGhostInline containerRef={pageRef as React.RefObject<HTMLDivElement>} width={20} height={8} />}
+
             {currentPagePlacements.map((p) => (
               <ResizablePlacement
                 key={p.id}
@@ -489,6 +492,7 @@ function SignaturePlacementViewer({ url, placements, onPlacementAdd, onPlacement
                 isSigned={false}
                 onRemove={onPlacementRemove}
                 onResize={onPlacementResize}
+                onMove={onPlacementMove}
                 containerRef={pageRef as React.RefObject<HTMLDivElement>}
               />
             ))}

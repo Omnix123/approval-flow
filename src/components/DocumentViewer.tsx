@@ -64,10 +64,12 @@ export function DocumentViewer({
       .map((s) => {
         const placement = externalPlacements.find((p) => p.stepIndex === s.order_index);
         if (!placement) return null;
-        return { placement, signatureDataUrl: s.signature_path!, approverName: s.approver_name };
+        const override = positionOverrides[placement.id];
+        const finalPlacement = override ? { ...placement, x: override.x, y: override.y } : placement;
+        return { placement: finalPlacement, signatureDataUrl: s.signature_path!, approverName: s.approver_name };
       })
       .filter(Boolean) as { placement: SignaturePlacement; signatureDataUrl: string; approverName: string }[];
-  }, [steps, externalPlacements]);
+  }, [steps, externalPlacements, positionOverrides]);
 
   const allApproved = steps.length > 0 && steps.every((s) => s.status === 'APPROVED');
 

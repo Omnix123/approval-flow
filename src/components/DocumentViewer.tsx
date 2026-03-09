@@ -96,7 +96,14 @@ export function DocumentViewer({
   }, []);
 
   const handleMovePlacement = useCallback((id: string, x: number, y: number) => {
-    setEditPlacements((prev) => prev.map((p) => p.id === id ? { ...p, x, y } : p));
+    // Update edit placements if it's an edit placement
+    setEditPlacements((prev) => {
+      const found = prev.find((p) => p.id === id);
+      if (found) return prev.map((p) => p.id === id ? { ...p, x, y } : p);
+      return prev;
+    });
+    // Also update position overrides for signed overlays
+    setPositionOverrides((prev) => ({ ...prev, [id]: { x, y } }));
   }, []);
 
   const handleSignDocument = () => {

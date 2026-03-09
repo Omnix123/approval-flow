@@ -394,6 +394,7 @@ interface PlacementViewerProps {
   onPlacementAdd: (p: Omit<SignaturePlacement, 'id'>) => void;
   onPlacementRemove: (id: string) => void;
   onPlacementResize: (id: string, width: number, height: number) => void;
+  onPlacementMove: (id: string, x: number, y: number) => void;
   approvers: { id: string; name: string; index: number }[];
 }
 

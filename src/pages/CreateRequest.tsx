@@ -390,6 +390,45 @@ export default function CreateRequest() {
   );
 }
 
+/** Ghost preview that follows cursor during placement mode */
+function PlacementGhostInline({ containerRef, width, height }: {
+  containerRef: React.RefObject<HTMLDivElement>;
+  width: number;
+  height: number;
+}) {
+  const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) { setPos(null); return; }
+    const onMove = (e: MouseEvent) => {
+      const rect = el.getBoundingClientRect();
+      const x = ((e.clientX - rect.left) / rect.width) * 100;
+      const y = ((e.clientY - rect.top) / rect.height) * 100;
+      setPos({
+        x: Math.max(0, Math.min(x - width / 2, 100 - width)),
+        y: Math.max(0, Math.min(y - height / 2, 100 - height)),
+      });
+    };
+    const onLeave = () => setPos(null);
+    el.addEventListener('mousemove', onMove);
+    el.addEventListener('mouseleave', onLeave);
+    return () => { el.removeEventListener('mousemove', onMove); el.removeEventListener('mouseleave', onLeave); };
+  }, [containerRef, width, height]);
+
+  if (!pos) return null;
+  return (
+    <div
+      className="absolute border-2 border-dashed border-primary/60 bg-primary/10 rounded pointer-events-none z-20"
+      style={{ left: `${pos.x}%`, top: `${pos.y}%`, width: `${width}%`, height: `${height}%` }}
+    >
+      <div className="absolute inset-0 flex items-center justify-center">
+        <span className="text-xs text-primary/60 font-medium select-none">Sign Here</span>
+      </div>
+    </div>
+  );
+}
+
 // Inline component for signature placement on the PDF during creation
 interface PlacementViewerProps {
   url: string;

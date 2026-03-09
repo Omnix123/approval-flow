@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button';
 import { RotateCcw, Save } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { getSavedSignature, saveSignature } from '@/lib/signatureStore';
+import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
 
 interface SignatureCanvasProps {
@@ -96,6 +97,7 @@ export function SignatureCanvas({
     if (!canvasRef.current || !user) return;
     const dataUrl = canvasRef.current.toDataURL('image/png');
     saveSignature(user.id, dataUrl);
+    toast.success('Signature saved! You can reuse it next time.');
   };
 
   const handleUseSaved = () => {

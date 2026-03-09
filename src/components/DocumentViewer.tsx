@@ -47,6 +47,8 @@ export function DocumentViewer({
   const [isDownloading, setIsDownloading] = useState(false);
   const [qrToken, setQrToken] = useState<string | null>(null);
   const qrTokenRef = useRef<string | null>(null);
+  // Track position overrides for signed overlays (so they can be dragged)
+  const [positionOverrides, setPositionOverrides] = useState<Record<string, { x: number; y: number }>>({});
 
   const currentStep = steps.find((s) => s.id === currentUserStepId);
   const currentStepIndex = currentStep?.order_index;
@@ -62,10 +64,12 @@ export function DocumentViewer({
       .map((s) => {
         const placement = externalPlacements.find((p) => p.stepIndex === s.order_index);
         if (!placement) return null;
-        return { placement, signatureDataUrl: s.signature_path!, approverName: s.approver_name };
+        const override = positionOverrides[placement.id];
+        const finalPlacement = override ? { ...placement, x: override.x, y: override.y } : placement;
+        return { placement: finalPlacement, signatureDataUrl: s.signature_path!, approverName: s.approver_name };
       })
       .filter(Boolean) as { placement: SignaturePlacement; signatureDataUrl: string; approverName: string }[];
-  }, [steps, externalPlacements]);
+  }, [steps, externalPlacements, positionOverrides]);
 
   const allApproved = steps.length > 0 && steps.every((s) => s.status === 'APPROVED');
 
@@ -92,7 +96,14 @@ export function DocumentViewer({
   }, []);
 
   const handleMovePlacement = useCallback((id: string, x: number, y: number) => {
-    setEditPlacements((prev) => prev.map((p) => p.id === id ? { ...p, x, y } : p));
+    // Update edit placements if it's an edit placement
+    setEditPlacements((prev) => {
+      const found = prev.find((p) => p.id === id);
+      if (found) return prev.map((p) => p.id === id ? { ...p, x, y } : p);
+      return prev;
+    });
+    // Also update position overrides for signed overlays
+    setPositionOverrides((prev) => ({ ...prev, [id]: { x, y } }));
   }, []);
 
   const handleSignDocument = () => {
@@ -205,7 +216,7 @@ export function DocumentViewer({
               onPlacementAdd={isEditing ? handleAddPlacement : undefined}
               onPlacementRemove={isEditing ? handleRemovePlacement : undefined}
               onPlacementResize={isEditing ? handleResizePlacement : undefined}
-              onPlacementMove={isEditing ? handleMovePlacement : undefined}
+              onPlacementMove={handleMovePlacement}
               isEditing={isEditing}
               currentStepIndex={currentStepIndex}
               readOnly={!isEditing}

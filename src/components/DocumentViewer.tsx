@@ -205,7 +205,7 @@ export function DocumentViewer({
               onPlacementAdd={isEditing ? handleAddPlacement : undefined}
               onPlacementRemove={isEditing ? handleRemovePlacement : undefined}
               onPlacementResize={isEditing ? handleResizePlacement : undefined}
-              onPlacementMove={isEditing ? handleMovePlacement : undefined}
+              onPlacementMove={handleMovePlacement}
               isEditing={isEditing}
               currentStepIndex={currentStepIndex}
               readOnly={!isEditing}

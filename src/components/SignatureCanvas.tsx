@@ -96,6 +96,7 @@ export function SignatureCanvas({
     if (!canvasRef.current || !user) return;
     const dataUrl = canvasRef.current.toDataURL('image/png');
     saveSignature(user.id, dataUrl);
+    toast.success('Signature saved! You can reuse it next time.');
   };
 
   const handleUseSaved = () => {

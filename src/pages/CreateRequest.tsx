@@ -339,6 +339,9 @@ export default function CreateRequest() {
                   onPlacementAdd={handleAddPlacement}
                   onPlacementRemove={handleRemovePlacement}
                   onPlacementResize={handleResizePlacement}
+                  onPlacementMove={(id, x, y) => {
+                    setPlacements((prev) => prev.map((p) => p.id === id ? { ...p, x, y } : p));
+                  }}
                   approvers={selectedApprovers.map((id, i) => {
                     const a = availableApprovers.find((u) => u.id === id);
                     return { id, name: a?.name || 'Unknown', index: i };

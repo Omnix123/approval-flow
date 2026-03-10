@@ -9,13 +9,11 @@ import { StatusBadge } from '@/components/StatusBadge';
 import { ApprovalProgress } from '@/components/ApprovalProgress';
 import { DocumentViewer } from '@/components/DocumentViewer';
 import { SignatureCanvas } from '@/components/SignatureCanvas';
+import { useRequestDetail, useSignStep, useReturnStep } from '@/hooks/useSupabaseData';
+import { supabase } from '@/integrations/supabase/client';
 import {
-  getRequests, getSteps, getFiles, getComments,
-  getSignaturePlacements, useStoreVersion, signStep, returnStep,
-} from '@/data/requestStore';
-import {
-  ArrowLeft, FileText, Building2, Calendar, User, Download,
-  Pen, RotateCcw, MessageSquare, CheckCircle, AlertCircle, Eye,
+  ArrowLeft, FileText, Building2, Calendar, User, Pen, RotateCcw,
+  MessageSquare, CheckCircle, AlertCircle, Eye,
 } from 'lucide-react';
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
@@ -31,13 +29,33 @@ export default function RequestDetail() {
   const [signatureDataUrl, setSignatureDataUrl] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState('details');
   const [selectedFileIndex, setSelectedFileIndex] = useState(0);
-  useStoreVersion();
 
-  const request = getRequests().find((r) => r.id === id);
-  const steps = id ? (getSteps()[id] || []) : [];
-  const files = id ? (getFiles()[id] || []) : [];
-  const comments = id ? (getComments()[id] || []) : [];
-  const placements = id ? getSignaturePlacements(id) : [];
+  const { data, isLoading } = useRequestDetail(id);
+  const signStepMutation = useSignStep();
+  const returnStepMutation = useReturnStep();
+
+  const request = data?.request;
+  const steps = data?.steps || [];
+  const files = data?.files || [];
+  const comments = data?.comments || [];
+
+  // Subscribe to realtime changes on approval_steps for this request
+  useEffect(() => {
+    if (!id) return;
+    const channel = supabase
+      .channel(`request-${id}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'approval_steps', filter: `request_id=eq.${id}` }, () => {
+        // React Query will refetch
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'qr_signing_tokens', filter: `request_id=eq.${id}` }, async (payload) => {
+        if (payload.eventType === 'UPDATE' && (payload.new as any).completed) {
+          toast.success('Signature received from mobile device!');
+        }
+      })
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [id]);
 
   const currentUserStep = useMemo(() => {
     if (!user) return null;
@@ -51,19 +69,6 @@ export default function RequestDetail() {
 
   const canApprove = !!currentUserStep;
 
-  // Listen for QR code signatures via BroadcastChannel
-  useEffect(() => {
-    const bc = new BroadcastChannel('ema_qr_signing');
-    bc.onmessage = (event) => {
-      const { token, signatureDataUrl: sigData } = event.data;
-      if (sigData && id && currentUserStep) {
-        signStep(id, currentUserStep.id, sigData);
-        toast.success('Signature received from mobile device!');
-      }
-    };
-    return () => bc.close();
-  }, [id, currentUserStep]);
-
   const formatDate = (dateStr: string) =>
     new Date(dateStr).toLocaleDateString('en-GB', {
       day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit',
@@ -74,20 +79,44 @@ export default function RequestDetail() {
       toast.error('Please draw your signature first');
       return;
     }
-    signStep(id, currentUserStep.id, signatureDataUrl);
-    toast.success('Document signed successfully!');
-    setSignDialogOpen(false);
-    setSignatureDataUrl(null);
+    signStepMutation.mutate(
+      { requestId: id, stepId: currentUserStep.id, signatureDataUrl },
+      {
+        onSuccess: () => {
+          toast.success('Document signed successfully!');
+          setSignDialogOpen(false);
+          setSignatureDataUrl(null);
+        },
+        onError: (err) => toast.error(err.message),
+      }
+    );
   };
 
   const handleReturn = () => {
     if (!returnMessage.trim()) { toast.error('Please provide a reason'); return; }
     if (!id || !currentUserStep || !user || !request) return;
-    returnStep(id, currentUserStep.id, returnMessage, user.id, user.name, request.requester_id, request.requester_name || 'Requester');
-    toast.success('Document returned to requester');
-    setReturnDialogOpen(false);
-    setReturnMessage('');
+    returnStepMutation.mutate(
+      {
+        requestId: id,
+        stepId: currentUserStep.id,
+        message: returnMessage,
+        toUserId: request.requester_id,
+        stepIndex: currentUserStep.order_index,
+      },
+      {
+        onSuccess: () => {
+          toast.success('Document returned to requester');
+          setReturnDialogOpen(false);
+          setReturnMessage('');
+        },
+        onError: (err) => toast.error(err.message),
+      }
+    );
   };
+
+  if (isLoading) {
+    return <div className="flex items-center justify-center py-12"><div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" /></div>;
+  }
 
   if (!request) {
     return (
@@ -237,11 +266,13 @@ export default function RequestDetail() {
                 currentUserStepId={currentUserStep?.id}
                 onSign={(sigData) => {
                   if (!id || !currentUserStep) return;
-                  signStep(id, currentUserStep.id, sigData);
-                  toast.success('Document signed successfully!');
+                  signStepMutation.mutate(
+                    { requestId: id, stepId: currentUserStep.id, signatureDataUrl: sigData },
+                    { onSuccess: () => toast.success('Document signed successfully!') }
+                  );
                 }}
                 isEditing={false}
-                placements={placements}
+                placements={[]}
                 requestId={id}
               />
             </div>
@@ -271,7 +302,9 @@ export default function RequestDetail() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setSignDialogOpen(false)}>Cancel</Button>
-            <Button onClick={handleSign} disabled={!signatureDataUrl}><Pen className="mr-2 h-4 w-4" />Confirm Signature</Button>
+            <Button onClick={handleSign} disabled={!signatureDataUrl || signStepMutation.isPending}>
+              <Pen className="mr-2 h-4 w-4" />Confirm Signature
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -288,7 +321,9 @@ export default function RequestDetail() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setReturnDialogOpen(false)}>Cancel</Button>
-            <Button variant="destructive" onClick={handleReturn}><RotateCcw className="mr-2 h-4 w-4" />Return Document</Button>
+            <Button variant="destructive" onClick={handleReturn} disabled={returnStepMutation.isPending}>
+              <RotateCcw className="mr-2 h-4 w-4" />Return Document
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

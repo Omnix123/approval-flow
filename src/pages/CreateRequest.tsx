@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef, useCallback, useEffect } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
@@ -6,83 +6,35 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
-import { MOCK_USERS, APPROVAL_CHAIN } from '@/data/mockData';
-import { addRequest } from '@/data/requestStore';
-import { SignaturePlacement } from '@/components/PDFViewer';
-import { ResizablePlacement } from '@/components/ResizablePlacement';
-import { ArrowLeft, Upload, X, Users, FileText, Building2, Loader2, Pen, ChevronRight, ChevronLeft, MousePointer, Trash2 } from 'lucide-react';
+import { useApproverProfiles, useCreateRequest } from '@/hooks/useSupabaseData';
+import { ArrowLeft, Upload, X, Users, FileText, Building2, Loader2, ChevronRight, ChevronLeft } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
-import { Document, Page, pdfjs } from 'react-pdf';
-import { ZoomIn, ZoomOut, ChevronLeft as CLeft, ChevronRight as CRight, Loader2 as Spin } from 'lucide-react';
-import 'react-pdf/dist/Page/AnnotationLayer.css';
-import 'react-pdf/dist/Page/TextLayer.css';
-import mammoth from 'mammoth';
 
-type WizardStep = 'details' | 'approvers' | 'signatures';
+type WizardStep = 'details' | 'approvers';
 
 export default function CreateRequest() {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const [isSubmitting, setIsSubmitting] = useState(false);
   const [wizardStep, setWizardStep] = useState<WizardStep>('details');
 
   const [title, setTitle] = useState('');
   const [vendorName, setVendorName] = useState('');
   const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
   const [selectedApprovers, setSelectedApprovers] = useState<string[]>([]);
-  const [placements, setPlacements] = useState<SignaturePlacement[]>([]);
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
-  const availableApprovers = MOCK_USERS.filter(
-    (u) => u.id !== user?.id && (u.role === 'approver' || u.role === 'admin')
-  );
+  const { data: approverProfiles = [], isLoading: approversLoading } = useApproverProfiles();
+  const createRequest = useCreateRequest();
 
-  const convertDocxToPdfBlob = async (file: File): Promise<string> => {
-    const arrayBuffer = await file.arrayBuffer();
-    const result = await mammoth.convertToHtml({ arrayBuffer });
-    // Create an HTML page and convert to blob URL for display
-    const html = `<!DOCTYPE html><html><head><style>
-      body { font-family: Arial, sans-serif; padding: 40px; max-width: 800px; margin: 0 auto; line-height: 1.6; }
-      table { border-collapse: collapse; width: 100%; } td, th { border: 1px solid #ddd; padding: 8px; }
-      img { max-width: 100%; }
-    </style></head><body>${result.value}</body></html>`;
-    const blob = new Blob([html], { type: 'text/html' });
-    return URL.createObjectURL(blob);
-  };
+  const availableApprovers = approverProfiles.filter((a) => a.id !== user?.id);
 
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files) return;
-    const newFiles = Array.from(e.target.files);
-    setUploadedFiles((prev) => [...prev, ...newFiles]);
-
-    // Set preview for first viewable file
-    if (!previewUrl) {
-      const firstPdf = newFiles.find((f) => f.type === 'application/pdf');
-      if (firstPdf) {
-        setPreviewUrl(URL.createObjectURL(firstPdf));
-      } else {
-        const firstDocx = newFiles.find((f) =>
-          f.name.endsWith('.docx') || f.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-        );
-        if (firstDocx) {
-          try {
-            const url = await convertDocxToPdfBlob(firstDocx);
-            setPreviewUrl(url);
-          } catch {
-            toast.error('Could not preview Word document');
-          }
-        }
-      }
-    }
+    setUploadedFiles((prev) => [...prev, ...Array.from(e.target.files!)]);
   };
 
   const removeFile = (index: number) => {
-    setUploadedFiles((prev) => {
-      const updated = prev.filter((_, i) => i !== index);
-      if (updated.length === 0) setPreviewUrl(null);
-      return updated;
-    });
+    setUploadedFiles((prev) => prev.filter((_, i) => i !== index));
   };
 
   const toggleApprover = (approverId: string) => {
@@ -91,98 +43,36 @@ export default function CreateRequest() {
     );
   };
 
-  const handleAddPlacement = (placement: Omit<SignaturePlacement, 'id'>) => {
-    const newPlacement: SignaturePlacement = {
-      ...placement,
-      id: `placement-${Date.now()}`,
-      label: placement.label || 'Signature',
-    };
-    setPlacements((prev) => [...prev, newPlacement]);
-    toast.success('Signature position added');
-  };
-
-  const handleRemovePlacement = (id: string) => {
-    setPlacements((prev) => prev.filter((p) => p.id !== id));
-    toast.success('Signature position removed');
-  };
-
-  const handleResizePlacement = (id: string, width: number, height: number) => {
-    setPlacements((prev) => prev.map((p) => p.id === id ? { ...p, width, height } : p));
-  };
-
-  const hasViewableFile = uploadedFiles.some(
-    (f) => f.type === 'application/pdf' || f.name.endsWith('.docx') ||
-      f.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-  );
   const canGoToApprovers = title.trim().length > 0;
 
-  const goNext = async () => {
+  const goNext = () => {
     if (wizardStep === 'details') {
       if (!title.trim()) { toast.error('Please enter a request title'); return; }
       setWizardStep('approvers');
-    } else if (wizardStep === 'approvers') {
-      if (selectedApprovers.length === 0) { toast.error('Please select at least one approver'); return; }
-      if (!hasViewableFile) {
-        handleSubmit();
-        return;
-      }
-      if (!previewUrl) {
-        const firstPdf = uploadedFiles.find((f) => f.type === 'application/pdf');
-        if (firstPdf) {
-          setPreviewUrl(URL.createObjectURL(firstPdf));
-        } else {
-          const firstDocx = uploadedFiles.find((f) => f.name.endsWith('.docx'));
-          if (firstDocx) {
-            try {
-              const url = await convertDocxToPdfBlob(firstDocx);
-              setPreviewUrl(url);
-            } catch { /* skip */ }
-          }
-        }
-      }
-      setWizardStep('signatures');
     }
   };
 
   const goBack = () => {
     if (wizardStep === 'approvers') setWizardStep('details');
-    else if (wizardStep === 'signatures') setWizardStep('approvers');
   };
 
-  const handleSubmit = async () => {
-    setIsSubmitting(true);
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+  const handleSubmit = () => {
+    if (selectedApprovers.length === 0) { toast.error('Please select at least one approver'); return; }
 
-    const approverNames: Record<string, string> = {};
-    availableApprovers.forEach((a) => { approverNames[a.id] = a.name; });
-
-    addRequest(
-      { title, vendorName, requesterId: user?.id || '', requesterName: user?.name || '' },
-      selectedApprovers,
-      approverNames,
-      uploadedFiles,
-      placements
+    createRequest.mutate(
+      { title, vendorName, approverIds: selectedApprovers, files: uploadedFiles },
+      {
+        onSuccess: () => {
+          toast.success('Request created successfully!');
+          navigate('/requests');
+        },
+        onError: (err) => toast.error(err.message),
+      }
     );
-
-    toast.success('Request created successfully!');
-    navigate('/requests');
   };
-
-  const mockSteps = selectedApprovers.map((approverId, index) => {
-    const approver = availableApprovers.find((a) => a.id === approverId);
-    return {
-      id: `temp-step-${index}`,
-      request_id: 'new',
-      order_index: index,
-      approver_id: approverId,
-      approver_name: approver?.name || 'Unknown',
-      status: 'WAITING' as const,
-    };
-  });
 
   return (
     <div className="max-w-4xl mx-auto space-y-6 animate-fade-in">
-      {/* Header */}
       <div className="flex items-center gap-4">
         <Button variant="ghost" size="icon" asChild>
           <Link to="/"><ArrowLeft className="h-5 w-5" /></Link>
@@ -192,22 +82,21 @@ export default function CreateRequest() {
           <p className="text-muted-foreground">
             {wizardStep === 'details' && 'Step 1: Enter request details and upload documents'}
             {wizardStep === 'approvers' && 'Step 2: Select the approval chain'}
-            {wizardStep === 'signatures' && 'Step 3: Place signature positions on the document'}
           </p>
         </div>
       </div>
 
       {/* Progress indicator */}
       <div className="flex items-center gap-2">
-        {(['details', 'approvers', 'signatures'] as WizardStep[]).map((step, i) => (
+        {(['details', 'approvers'] as WizardStep[]).map((step, i) => (
           <div key={step} className="flex items-center gap-2">
             <div className={cn(
               'w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold',
               wizardStep === step ? 'bg-primary text-primary-foreground' :
-              (['details', 'approvers', 'signatures'].indexOf(wizardStep) > i)
+              (['details', 'approvers'].indexOf(wizardStep) > i)
                 ? 'bg-primary/20 text-primary' : 'bg-secondary text-muted-foreground'
             )}>{i + 1}</div>
-            {i < 2 && <div className={cn('w-12 h-0.5', (['details', 'approvers', 'signatures'].indexOf(wizardStep) > i) ? 'bg-primary' : 'bg-border')} />}
+            {i < 1 && <div className={cn('w-12 h-0.5', (['details', 'approvers'].indexOf(wizardStep) > i) ? 'bg-primary' : 'bg-border')} />}
           </div>
         ))}
       </div>
@@ -274,31 +163,37 @@ export default function CreateRequest() {
             <CardDescription>Select the approvers in the order they should sign</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="space-y-3">
-              {APPROVAL_CHAIN.map((chainItem) => {
-                const approver = availableApprovers.find((a) => a.department === chainItem.department);
-                if (!approver) return null;
-                const isSelected = selectedApprovers.includes(approver.id);
-                const orderIndex = selectedApprovers.indexOf(approver.id);
-                return (
-                  <div key={chainItem.order} className={cn(
-                    'flex items-center gap-4 p-4 rounded-lg border transition-colors cursor-pointer',
-                    isSelected ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/50'
-                  )} onClick={() => toggleApprover(approver.id)}>
-                    <div onClick={(e) => e.stopPropagation()}>
-                      <Checkbox checked={isSelected} onCheckedChange={() => toggleApprover(approver.id)} />
+            {approversLoading ? (
+              <div className="flex items-center justify-center py-8">
+                <div className="h-6 w-6 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+              </div>
+            ) : availableApprovers.length === 0 ? (
+              <p className="text-muted-foreground text-center py-8">No approvers available. Ask an admin to assign approver roles.</p>
+            ) : (
+              <div className="space-y-3">
+                {availableApprovers.map((approver) => {
+                  const isSelected = selectedApprovers.includes(approver.id);
+                  const orderIndex = selectedApprovers.indexOf(approver.id);
+                  return (
+                    <div key={approver.id} className={cn(
+                      'flex items-center gap-4 p-4 rounded-lg border transition-colors cursor-pointer',
+                      isSelected ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/50'
+                    )} onClick={() => toggleApprover(approver.id)}>
+                      <div onClick={(e) => e.stopPropagation()}>
+                        <Checkbox checked={isSelected} onCheckedChange={() => toggleApprover(approver.id)} />
+                      </div>
+                      <div className="flex-1">
+                        <p className="font-medium">{approver.name}</p>
+                        <p className="text-sm text-muted-foreground">{approver.department || 'No department'} • {approver.role}</p>
+                      </div>
+                      {isSelected && (
+                        <div className="flex items-center justify-center w-8 h-8 rounded-full bg-primary text-primary-foreground text-sm font-bold">{orderIndex + 1}</div>
+                      )}
                     </div>
-                    <div className="flex-1">
-                      <p className="font-medium">{approver.name}</p>
-                      <p className="text-sm text-muted-foreground">{chainItem.role} • {chainItem.department}</p>
-                    </div>
-                    {isSelected && (
-                      <div className="flex items-center justify-center w-8 h-8 rounded-full bg-primary text-primary-foreground text-sm font-bold">{orderIndex + 1}</div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
+                  );
+                })}
+              </div>
+            )}
             {selectedApprovers.length > 0 && (
               <div className="mt-4 p-3 bg-secondary rounded-lg">
                 <p className="text-sm font-medium mb-2">Approval Order:</p>
@@ -318,57 +213,6 @@ export default function CreateRequest() {
         </Card>
       )}
 
-      {/* Step 3: Signature Placement */}
-      {wizardStep === 'signatures' && previewUrl && (
-        <div className="space-y-4">
-          <Card className="border-primary/30 bg-primary/5">
-            <CardContent className="py-4">
-              <div className="flex items-center gap-2">
-                <Pen className="h-5 w-5 text-primary" />
-                <p className="font-medium">Click "Add Signature" in the toolbar, then click on the document to place each approver's signature. Drag the corner to resize.</p>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="overflow-hidden">
-            <CardContent className="p-0">
-              <div className="h-[600px]">
-                <SignaturePlacementViewer
-                  url={previewUrl}
-                  placements={placements}
-                  onPlacementAdd={handleAddPlacement}
-                  onPlacementRemove={handleRemovePlacement}
-                  onPlacementResize={handleResizePlacement}
-                  onPlacementMove={(id, x, y) => {
-                    setPlacements((prev) => prev.map((p) => p.id === id ? { ...p, x, y } : p));
-                  }}
-                  approvers={selectedApprovers.map((id, i) => {
-                    const a = availableApprovers.find((u) => u.id === id);
-                    return { id, name: a?.name || 'Unknown', index: i };
-                  })}
-                />
-              </div>
-            </CardContent>
-          </Card>
-
-          {placements.length > 0 && (
-            <Card>
-              <CardHeader className="py-3"><CardTitle className="text-sm">Placed Signatures ({placements.length})</CardTitle></CardHeader>
-              <CardContent className="py-2">
-                <div className="space-y-2">
-                  {placements.map((p, i) => (
-                    <div key={p.id} className="flex items-center justify-between p-2 bg-secondary/50 rounded-lg text-sm">
-                      <span>{p.label || `Field ${i + 1}`} — Page {p.pageNumber} ({Math.round(p.width)}% × {Math.round(p.height)}%)</span>
-                      <Button variant="ghost" size="sm" onClick={() => handleRemovePlacement(p.id)} className="h-6 text-destructive hover:text-destructive">Remove</Button>
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          )}
-        </div>
-      )}
-
       {/* Navigation Buttons */}
       <div className="flex gap-4">
         {wizardStep !== 'details' && (
@@ -376,179 +220,16 @@ export default function CreateRequest() {
         )}
         <div className="flex-1" />
         <Button type="button" variant="outline" onClick={() => navigate('/')}>Cancel</Button>
-        {wizardStep === 'signatures' ? (
-          <Button onClick={handleSubmit} disabled={isSubmitting}>
-            {isSubmitting ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Creating...</> : 'Create Request'}
+        {wizardStep === 'approvers' ? (
+          <Button onClick={handleSubmit} disabled={createRequest.isPending || selectedApprovers.length === 0}>
+            {createRequest.isPending ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Creating...</> : 'Create Request'}
           </Button>
         ) : (
-          <Button onClick={goNext} disabled={wizardStep === 'details' ? !canGoToApprovers : !selectedApprovers.length}>
+          <Button onClick={goNext} disabled={!canGoToApprovers}>
             Next<ChevronRight className="ml-1 h-4 w-4" />
           </Button>
         )}
       </div>
-    </div>
-  );
-}
-
-/** Ghost preview that follows cursor during placement mode */
-function PlacementGhostInline({ containerRef, width, height }: {
-  containerRef: React.RefObject<HTMLDivElement>;
-  width: number;
-  height: number;
-}) {
-  const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
-
-  useEffect(() => {
-    const el = containerRef.current;
-    if (!el) { setPos(null); return; }
-    const onMove = (e: MouseEvent) => {
-      const rect = el.getBoundingClientRect();
-      const x = ((e.clientX - rect.left) / rect.width) * 100;
-      const y = ((e.clientY - rect.top) / rect.height) * 100;
-      setPos({
-        x: Math.max(0, Math.min(x - width / 2, 100 - width)),
-        y: Math.max(0, Math.min(y - height / 2, 100 - height)),
-      });
-    };
-    const onLeave = () => setPos(null);
-    el.addEventListener('mousemove', onMove);
-    el.addEventListener('mouseleave', onLeave);
-    return () => { el.removeEventListener('mousemove', onMove); el.removeEventListener('mouseleave', onLeave); };
-  }, [containerRef, width, height]);
-
-  if (!pos) return null;
-  return (
-    <div
-      className="absolute border-2 border-dashed border-primary/60 bg-primary/10 rounded pointer-events-none z-20"
-      style={{ left: `${pos.x}%`, top: `${pos.y}%`, width: `${width}%`, height: `${height}%` }}
-    >
-      <div className="absolute inset-0 flex items-center justify-center">
-        <span className="text-xs text-primary/60 font-medium select-none">Sign Here</span>
-      </div>
-    </div>
-  );
-}
-
-// Inline component for signature placement on the PDF during creation
-interface PlacementViewerProps {
-  url: string;
-  placements: SignaturePlacement[];
-  onPlacementAdd: (p: Omit<SignaturePlacement, 'id'>) => void;
-  onPlacementRemove: (id: string) => void;
-  onPlacementResize: (id: string, width: number, height: number) => void;
-  onPlacementMove: (id: string, x: number, y: number) => void;
-  approvers: { id: string; name: string; index: number }[];
-}
-
-function SignaturePlacementViewer({ url, placements, onPlacementAdd, onPlacementRemove, onPlacementResize, onPlacementMove, approvers }: PlacementViewerProps) {
-  const [numPages, setNumPages] = useState(0);
-  const [pageNumber, setPageNumber] = useState(1);
-  const [scale, setScale] = useState(1);
-  const [isLoading, setIsLoading] = useState(true);
-  const [placementMode, setPlacementMode] = useState(false);
-  const [selectedApproverIdx, setSelectedApproverIdx] = useState(0);
-  const pageRef = useRef<HTMLDivElement>(null);
-
-  const handlePageClick = useCallback(
-    (e: React.MouseEvent<HTMLDivElement>) => {
-      if (!placementMode || !pageRef.current) return;
-      const rect = pageRef.current.getBoundingClientRect();
-      const x = ((e.clientX - rect.left) / rect.width) * 100;
-      const y = ((e.clientY - rect.top) / rect.height) * 100;
-      const width = 20;
-      const height = 8;
-      const approver = approvers[selectedApproverIdx];
-      onPlacementAdd({
-        pageNumber,
-        x: Math.max(0, Math.min(x - width / 2, 100 - width)),
-        y: Math.max(0, Math.min(y - height / 2, 100 - height)),
-        width,
-        height,
-        stepIndex: selectedApproverIdx,
-        label: approver?.name || 'Signature',
-      });
-      setPlacementMode(false);
-    },
-    [placementMode, pageNumber, onPlacementAdd, selectedApproverIdx, approvers]
-  );
-
-  const currentPagePlacements = placements.filter((p) => p.pageNumber === pageNumber);
-
-  return (
-    <div className="flex flex-col h-full bg-muted/30 rounded-lg overflow-hidden">
-      <div className="flex items-center justify-between p-3 bg-card border-b border-border flex-wrap gap-2">
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={() => setPageNumber((p) => Math.max(1, p - 1))} disabled={pageNumber <= 1}><CLeft className="h-4 w-4" /></Button>
-          <span className="text-sm text-muted-foreground min-w-[80px] text-center">Page {pageNumber} of {numPages}</span>
-          <Button variant="outline" size="sm" onClick={() => setPageNumber((p) => Math.min(numPages, p + 1))} disabled={pageNumber >= numPages}><CRight className="h-4 w-4" /></Button>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={() => setScale((s) => Math.max(0.5, s - 0.25))} disabled={scale <= 0.5}><ZoomOut className="h-4 w-4" /></Button>
-          <span className="text-sm text-muted-foreground min-w-[50px] text-center">{Math.round(scale * 100)}%</span>
-          <Button variant="outline" size="sm" onClick={() => setScale((s) => Math.min(2, s + 0.25))} disabled={scale >= 2}><ZoomIn className="h-4 w-4" /></Button>
-        </div>
-        <div className="flex items-center gap-2">
-          <select
-            className="text-sm border border-border rounded px-2 py-1 bg-card text-foreground"
-            value={selectedApproverIdx}
-            onChange={(e) => setSelectedApproverIdx(Number(e.target.value))}
-          >
-            {approvers.map((a) => (
-              <option key={a.id} value={a.index}>{a.name}</option>
-            ))}
-          </select>
-          <Button variant={placementMode ? 'default' : 'outline'} size="sm" onClick={() => setPlacementMode(!placementMode)}>
-            {placementMode ? <><MousePointer className="h-4 w-4 mr-1" />Click to place</> : <><Pen className="h-4 w-4 mr-1" />Add Signature</>}
-          </Button>
-        </div>
-      </div>
-
-      <div className="flex-1 overflow-auto p-4">
-        <div className="flex justify-center">
-          <div
-            ref={pageRef}
-            className={cn('relative inline-block shadow-lg bg-white', placementMode && 'cursor-crosshair')}
-            onClick={handlePageClick}
-          >
-            {isLoading && (
-              <div className="absolute inset-0 flex items-center justify-center bg-muted z-10"><Spin className="h-8 w-8 animate-spin text-primary" /></div>
-            )}
-            <Document
-              file={url}
-              onLoadSuccess={({ numPages: n }) => { setNumPages(n); setIsLoading(false); }}
-              onLoadError={() => setIsLoading(false)}
-              loading={null} error={null} noData={null}
-            >
-              <Page pageNumber={pageNumber} scale={scale} renderTextLayer={true} renderAnnotationLayer={true} />
-            </Document>
-
-            {/* Ghost preview that follows the cursor */}
-            {placementMode && <PlacementGhostInline containerRef={pageRef as React.RefObject<HTMLDivElement>} width={20} height={8} />}
-
-            {currentPagePlacements.map((p) => (
-              <ResizablePlacement
-                key={p.id}
-                placement={p}
-                isEditing={true}
-                isCurrentStep={true}
-                isSigned={false}
-                onRemove={onPlacementRemove}
-                onResize={onPlacementResize}
-                onMove={onPlacementMove}
-                containerRef={pageRef as React.RefObject<HTMLDivElement>}
-              />
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {placementMode && (
-        <div className="p-3 bg-primary/10 border-t border-primary/20 text-center">
-          <p className="text-sm text-primary font-medium">
-            Click on the document to place signature for: <strong>{approvers[selectedApproverIdx]?.name}</strong>
-          </p>
-        </div>
-      )}
     </div>
   );
 }

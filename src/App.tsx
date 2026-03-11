@@ -11,6 +11,7 @@ import RequestList from "./pages/RequestList";
 import RequestDetail from "./pages/RequestDetail";
 import CreateRequest from "./pages/CreateRequest";
 import Approvals from "./pages/Approvals";
+import AdminDashboard from "./pages/AdminDashboard";
 import SignMobile from "./pages/SignMobile";
 import NotFound from "./pages/NotFound";
 

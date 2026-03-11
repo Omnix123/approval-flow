@@ -35,6 +35,8 @@ export default function Login() {
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    const result = loginSchema.safeParse({ email, password });
+    if (!result.success) { setError(result.error.errors[0].message); return; }
     setIsLoading(true);
     try {
       await login(email, password);
@@ -50,14 +52,8 @@ export default function Login() {
     e.preventDefault();
     setError('');
     setSuccess('');
-    if (password.length < 6) {
-      setError('Password must be at least 6 characters');
-      return;
-    }
-    if (!name.trim()) {
-      setError('Please enter your full name');
-      return;
-    }
+    const result = signupSchema.safeParse({ name, email, password, department });
+    if (!result.success) { setError(result.error.errors[0].message); return; }
     setIsLoading(true);
     try {
       await signup(email, password, name, department || undefined);

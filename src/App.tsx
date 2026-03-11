@@ -40,6 +40,7 @@ function AppRoutes() {
       <Route path="/requests/:id" element={<ProtectedRoute><RequestDetail /></ProtectedRoute>} />
       <Route path="/create" element={<ProtectedRoute><CreateRequest /></ProtectedRoute>} />
       <Route path="/approvals" element={<ProtectedRoute><Approvals /></ProtectedRoute>} />
+      <Route path="/users" element={<ProtectedRoute><AdminDashboard /></ProtectedRoute>} />
       <Route path="/sign-mobile/:token" element={<SignMobile />} />
       <Route path="*" element={<NotFound />} />
     </Routes>

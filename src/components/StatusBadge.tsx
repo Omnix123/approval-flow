@@ -1,3 +1,28 @@
+/**
+ * StatusBadge.tsx — Color-Coded Status Indicator
+ * 
+ * PURPOSE: Renders a small, color-coded pill/badge showing the current status
+ * of a request or approval step. Provides instant visual feedback about state.
+ * 
+ * STATUS → COLOR MAPPING:
+ * - PENDING   → Yellow (warning color)
+ * - IN_PROGRESS → Blue (info color)
+ * - APPROVED  → Green (success color)
+ * - RETURNED  → Red (destructive color)
+ * - REJECTED  → Red (destructive color)
+ * - WAITING   → Gray (muted color)
+ * - SKIPPED   → Gray (muted color)
+ * 
+ * Each status also has a matching icon (Clock, Check, RotateCcw, X, Minus).
+ * 
+ * SIZING:
+ * - 'sm': Smaller text and padding, used in cards and compact views
+ * - 'md': Default size, used in detail pages and headers
+ * 
+ * DESIGN: Uses semantic tokens (text-warning, bg-success/15, etc.) so the
+ * colors automatically adjust for light and dark themes.
+ */
+
 import { cn } from '@/lib/utils';
 import { RequestStatus, StepStatus } from '@/types';
 import { Check, Clock, RotateCcw, X, Minus } from 'lucide-react';
@@ -7,6 +32,11 @@ interface StatusBadgeProps {
   size?: 'sm' | 'md';
 }
 
+/**
+ * Configuration map: each status maps to a display label, CSS classes, and icon.
+ * The className uses Tailwind's opacity modifier (e.g., bg-warning/15) for
+ * subtle backgrounds that don't overpower the text.
+ */
 const STATUS_CONFIG: Record<string, { label: string; className: string; icon: typeof Check }> = {
   PENDING: {
     label: 'Pending',
@@ -46,6 +76,7 @@ const STATUS_CONFIG: Record<string, { label: string; className: string; icon: ty
 };
 
 export function StatusBadge({ status, size = 'md' }: StatusBadgeProps) {
+  // Fallback to PENDING config if status is unknown
   const config = STATUS_CONFIG[status] || STATUS_CONFIG.PENDING;
   const Icon = config.icon;
 

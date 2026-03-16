@@ -1,3 +1,28 @@
+/**
+ * CreateRequest.tsx — New Procurement Request Wizard (Route: /create)
+ * 
+ * PURPOSE: A 2-step wizard that guides users through creating a new procurement request.
+ * 
+ * WIZARD STEPS:
+ * 1. DETAILS — Enter request title, vendor name, and upload supporting documents
+ * 2. APPROVERS — Select which approvers should sign, and in what order
+ * 
+ * HOW APPROVAL ORDER WORKS:
+ * - Approvers are selected via checkboxes
+ * - The ORDER in which they are selected determines the approval chain
+ * - e.g., Click "Alice" then "Bob" → Alice must sign first, then Bob
+ * - A numbered badge shows each approver's position in the chain
+ * 
+ * DATA FLOW:
+ * 1. useApproverProfiles() fetches all users with 'approver' or 'admin' roles
+ * 2. On submit, useCreateRequest() mutation:
+ *    a. Creates the procurement_request record (auto-generates REQ-XXXX)
+ *    b. Creates approval_steps in the selected order
+ *    c. Uploads files to storage bucket
+ *    d. Logs the action in audit_logs
+ * 3. React Query invalidates caches → Dashboard/RequestList update automatically
+ */
+
 import { useState, useMemo, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
@@ -11,6 +36,7 @@ import { ArrowLeft, Upload, X, Users, FileText, Building2, Loader2, ChevronRight
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 
+/** The two steps of the wizard */
 type WizardStep = 'details' | 'approvers';
 
 export default function CreateRequest() {
@@ -18,33 +44,47 @@ export default function CreateRequest() {
   const { user } = useAuth();
   const [wizardStep, setWizardStep] = useState<WizardStep>('details');
 
+  // Form state for step 1 (details)
   const [title, setTitle] = useState('');
   const [vendorName, setVendorName] = useState('');
   const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
+
+  // Form state for step 2 (approvers) — array of user IDs in signing order
   const [selectedApprovers, setSelectedApprovers] = useState<string[]>([]);
 
+  // Fetch all users who have the 'approver' or 'admin' role
   const { data: approverProfiles = [], isLoading: approversLoading } = useApproverProfiles();
   const createRequest = useCreateRequest();
 
+  // Don't show the current user as an approver (can't approve your own request)
   const availableApprovers = approverProfiles.filter((a) => a.id !== user?.id);
 
+  /** Handle file input — append new files to the existing list */
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files) return;
     setUploadedFiles((prev) => [...prev, ...Array.from(e.target.files!)]);
   };
 
+  /** Remove a specific file from the upload list */
   const removeFile = (index: number) => {
     setUploadedFiles((prev) => prev.filter((_, i) => i !== index));
   };
 
+  /**
+   * Toggle an approver's selection.
+   * If already selected → remove from list.
+   * If not selected → add to end of list (determines their position in the chain).
+   */
   const toggleApprover = (approverId: string) => {
     setSelectedApprovers((prev) =>
       prev.includes(approverId) ? prev.filter((id) => id !== approverId) : [...prev, approverId]
     );
   };
 
+  // Can't proceed to step 2 without a title
   const canGoToApprovers = title.trim().length > 0;
 
+  /** Navigate forward in the wizard */
   const goNext = () => {
     if (wizardStep === 'details') {
       if (!title.trim()) { toast.error('Please enter a request title'); return; }
@@ -52,10 +92,15 @@ export default function CreateRequest() {
     }
   };
 
+  /** Navigate backward in the wizard */
   const goBack = () => {
     if (wizardStep === 'approvers') setWizardStep('details');
   };
 
+  /**
+   * Submit the request — called when user clicks "Create Request" on step 2.
+   * Delegates to the useCreateRequest mutation which handles all database operations.
+   */
   const handleSubmit = () => {
     if (selectedApprovers.length === 0) { toast.error('Please select at least one approver'); return; }
 
@@ -73,6 +118,7 @@ export default function CreateRequest() {
 
   return (
     <div className="max-w-4xl mx-auto space-y-6 animate-fade-in">
+      {/* Header with back button */}
       <div className="flex items-center gap-4">
         <Button variant="ghost" size="icon" asChild>
           <Link to="/"><ArrowLeft className="h-5 w-5" /></Link>
@@ -86,7 +132,7 @@ export default function CreateRequest() {
         </div>
       </div>
 
-      {/* Progress indicator */}
+      {/* Progress indicator — shows which wizard step is active */}
       <div className="flex items-center gap-2">
         {(['details', 'approvers'] as WizardStep[]).map((step, i) => (
           <div key={step} className="flex items-center gap-2">
@@ -101,9 +147,10 @@ export default function CreateRequest() {
         ))}
       </div>
 
-      {/* Step 1: Details */}
+      {/* ==================== STEP 1: Request Details ==================== */}
       {wizardStep === 'details' && (
         <div className="space-y-6">
+          {/* Title & Vendor card */}
           <Card>
             <CardHeader>
               <CardTitle className="text-lg flex items-center gap-2"><FileText className="h-5 w-5" />Request Details</CardTitle>
@@ -120,12 +167,14 @@ export default function CreateRequest() {
             </CardContent>
           </Card>
 
+          {/* File upload card */}
           <Card>
             <CardHeader>
               <CardTitle className="text-lg flex items-center gap-2"><Upload className="h-5 w-5" />Documents</CardTitle>
               <CardDescription>Upload PDF or Word documents</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
+              {/* Drop zone — styled file input */}
               <div className="border-2 border-dashed border-border rounded-lg p-8 text-center hover:border-primary/50 transition-colors">
                 <input type="file" id="file-upload" multiple accept=".pdf,.doc,.docx,.xls,.xlsx" onChange={handleFileChange} className="hidden" />
                 <label htmlFor="file-upload" className="cursor-pointer">
@@ -134,6 +183,7 @@ export default function CreateRequest() {
                   <p className="text-sm text-muted-foreground mt-1">PDF, DOC, DOCX, XLS, XLSX (max 10MB)</p>
                 </label>
               </div>
+              {/* List of uploaded files with remove button */}
               {uploadedFiles.length > 0 && (
                 <div className="space-y-2">
                   {uploadedFiles.map((file, index) => (
@@ -155,7 +205,7 @@ export default function CreateRequest() {
         </div>
       )}
 
-      {/* Step 2: Approvers */}
+      {/* ==================== STEP 2: Approver Selection ==================== */}
       {wizardStep === 'approvers' && (
         <Card>
           <CardHeader>
@@ -186,6 +236,7 @@ export default function CreateRequest() {
                         <p className="font-medium">{approver.name}</p>
                         <p className="text-sm text-muted-foreground">{approver.department || 'No department'} • {approver.role}</p>
                       </div>
+                      {/* Show position number when selected */}
                       {isSelected && (
                         <div className="flex items-center justify-center w-8 h-8 rounded-full bg-primary text-primary-foreground text-sm font-bold">{orderIndex + 1}</div>
                       )}
@@ -194,6 +245,8 @@ export default function CreateRequest() {
                 })}
               </div>
             )}
+
+            {/* Show the approval order summary */}
             {selectedApprovers.length > 0 && (
               <div className="mt-4 p-3 bg-secondary rounded-lg">
                 <p className="text-sm font-medium mb-2">Approval Order:</p>
@@ -213,7 +266,7 @@ export default function CreateRequest() {
         </Card>
       )}
 
-      {/* Navigation Buttons */}
+      {/* Navigation buttons — Back, Cancel, Next/Create */}
       <div className="flex gap-4">
         {wizardStep !== 'details' && (
           <Button type="button" variant="outline" onClick={goBack}><ChevronLeft className="mr-1 h-4 w-4" />Back</Button>

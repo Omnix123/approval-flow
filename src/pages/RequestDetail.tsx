@@ -1,3 +1,25 @@
+/**
+ * RequestDetail.tsx — Single Request View (Route: /requests/:id)
+ * 
+ * PURPOSE: Displays full details of a procurement request including:
+ * - Request metadata (title, vendor, dates, requester)
+ * - Attached documents (with PDF viewer)
+ * - Approval progress (visual step timeline)
+ * - Comments/return reasons
+ * - Action buttons for signing or returning (if user is the current approver)
+ * 
+ * REAL-TIME UPDATES:
+ * This page subscribes to Supabase Realtime for two tables:
+ * 1. approval_steps — detects when another approver signs
+ * 2. qr_signing_tokens — detects when a mobile QR signature is completed
+ * This means if someone signs on their phone, the desktop sees it instantly.
+ * 
+ * SECURITY:
+ * - canApprove is computed client-side for UX, but the actual UPDATE is protected by RLS
+ * - Only the assigned approver for the current step can modify it
+ * - Return comments are recorded with from_user_id = auth.uid() (enforced by RLS)
+ */
+
 import { useState, useMemo, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
@@ -21,42 +43,68 @@ import {
 import { toast } from 'sonner';
 
 export default function RequestDetail() {
+  // Extract the request ID from the URL parameter (/requests/:id)
   const { id } = useParams<{ id: string }>();
   const { user } = useAuth();
+
+  // Dialog state for sign and return modals
   const [returnDialogOpen, setReturnDialogOpen] = useState(false);
   const [signDialogOpen, setSignDialogOpen] = useState(false);
   const [returnMessage, setReturnMessage] = useState('');
   const [signatureDataUrl, setSignatureDataUrl] = useState<string | null>(null);
+  
+  // Tab state and selected document index
   const [activeTab, setActiveTab] = useState('details');
   const [selectedFileIndex, setSelectedFileIndex] = useState(0);
 
+  // Fetch all data for this specific request (request, steps, files, comments)
   const { data, isLoading } = useRequestDetail(id);
   const signStepMutation = useSignStep();
   const returnStepMutation = useReturnStep();
 
+  // Destructure the fetched data with defaults
   const request = data?.request;
   const steps = data?.steps || [];
   const files = data?.files || [];
   const comments = data?.comments || [];
 
-  // Subscribe to realtime changes on approval_steps for this request
+  /**
+   * REAL-TIME SUBSCRIPTION
+   * 
+   * Subscribe to changes on approval_steps and qr_signing_tokens for this request.
+   * When any change occurs:
+   * - approval_steps change → React Query will refetch on next access
+   * - qr_signing_tokens completed → show a toast notification
+   * 
+   * The subscription is cleaned up when the component unmounts or the request ID changes.
+   */
   useEffect(() => {
     if (!id) return;
     const channel = supabase
       .channel(`request-${id}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'approval_steps', filter: `request_id=eq.${id}` }, () => {
-        // React Query will refetch
+        // Realtime event received — React Query will refetch automatically
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'qr_signing_tokens', filter: `request_id=eq.${id}` }, async (payload) => {
+        // When a QR token is marked as completed, notify the user
         if (payload.eventType === 'UPDATE' && (payload.new as any).completed) {
           toast.success('Signature received from mobile device!');
         }
       })
       .subscribe();
 
+    // Cleanup: remove the channel when leaving the page
     return () => { supabase.removeChannel(channel); };
   }, [id]);
 
+  /**
+   * DETERMINE CURRENT USER'S ACTIONABLE STEP
+   * 
+   * Finds the approval step that the current user can act on (sign or return).
+   * Returns null if the user has no pending step for this request.
+   * 
+   * Sequential enforcement: A step is only actionable if all previous steps are APPROVED.
+   */
   const currentUserStep = useMemo(() => {
     if (!user) return null;
     return steps.find(
@@ -69,11 +117,17 @@ export default function RequestDetail() {
 
   const canApprove = !!currentUserStep;
 
+  /** Format a date string to a human-readable format (e.g., "15 March 2026, 14:30") */
   const formatDate = (dateStr: string) =>
     new Date(dateStr).toLocaleDateString('en-GB', {
       day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit',
     });
 
+  /**
+   * SIGN HANDLER
+   * Submits the drawn signature to approve the current step.
+   * The mutation updates the approval_step and logs the action.
+   */
   const handleSign = () => {
     if (!signatureDataUrl || !id || !currentUserStep) {
       toast.error('Please draw your signature first');
@@ -92,6 +146,11 @@ export default function RequestDetail() {
     );
   };
 
+  /**
+   * RETURN HANDLER
+   * Rejects the current step and sends a comment back to the requester.
+   * The mutation updates the step status and creates a comment record.
+   */
   const handleReturn = () => {
     if (!returnMessage.trim()) { toast.error('Please provide a reason'); return; }
     if (!id || !currentUserStep || !user || !request) return;
@@ -114,10 +173,12 @@ export default function RequestDetail() {
     );
   };
 
+  // Loading state
   if (isLoading) {
     return <div className="flex items-center justify-center py-12"><div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" /></div>;
   }
 
+  // Request not found
   if (!request) {
     return (
       <div className="text-center py-12">
@@ -131,6 +192,7 @@ export default function RequestDetail() {
 
   return (
     <div className="space-y-6 animate-fade-in">
+      {/* Header: Title, status badge, short ID */}
       <div className="flex items-start gap-4">
         <Button variant="ghost" size="icon" asChild><Link to="/requests"><ArrowLeft className="h-5 w-5" /></Link></Button>
         <div className="flex-1">
@@ -142,6 +204,7 @@ export default function RequestDetail() {
         </div>
       </div>
 
+      {/* Action banner — shown only when the current user can approve this request */}
       {canApprove && (
         <Card className="border-primary/30 bg-primary/5">
           <CardContent className="py-4">
@@ -159,15 +222,18 @@ export default function RequestDetail() {
         </Card>
       )}
 
+      {/* Content tabs: Details view vs Document view */}
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList className="grid w-full grid-cols-2 lg:w-auto lg:inline-grid">
           <TabsTrigger value="details" className="gap-2"><FileText className="h-4 w-4" />Details</TabsTrigger>
           <TabsTrigger value="document" className="gap-2"><Eye className="h-4 w-4" />View Document</TabsTrigger>
         </TabsList>
 
+        {/* ==================== DETAILS TAB ==================== */}
         <TabsContent value="details" className="mt-6">
           <div className="grid lg:grid-cols-3 gap-6">
             <div className="lg:col-span-2 space-y-6">
+              {/* Request metadata */}
               <Card>
                 <CardHeader><CardTitle className="text-lg">Request Details</CardTitle></CardHeader>
                 <CardContent className="space-y-4">
@@ -194,6 +260,7 @@ export default function RequestDetail() {
                 </CardContent>
               </Card>
 
+              {/* Attached files list */}
               <Card>
                 <CardHeader><CardTitle className="text-lg">Attached Documents</CardTitle></CardHeader>
                 <CardContent>
@@ -221,6 +288,7 @@ export default function RequestDetail() {
                 </CardContent>
               </Card>
 
+              {/* Return comments — shown when approvers have returned the request */}
               {comments.length > 0 && (
                 <Card>
                   <CardHeader><CardTitle className="text-lg flex items-center gap-2"><MessageSquare className="h-5 w-5" />Comments</CardTitle></CardHeader>
@@ -239,6 +307,7 @@ export default function RequestDetail() {
               )}
             </div>
 
+            {/* Sidebar: Approval progress timeline */}
             <div className="space-y-6">
               <Card>
                 <CardHeader><CardTitle className="text-lg">Approval Progress</CardTitle></CardHeader>
@@ -248,9 +317,11 @@ export default function RequestDetail() {
           </div>
         </TabsContent>
 
+        {/* ==================== DOCUMENT TAB ==================== */}
         <TabsContent value="document" className="mt-6">
           <div className="grid lg:grid-cols-4 gap-6">
             <div className="lg:col-span-3">
+              {/* File selector tabs (when multiple files are attached) */}
               {files.length > 1 && (
                 <div className="flex gap-2 mb-4">
                   {files.map((file, idx) => (
@@ -260,6 +331,7 @@ export default function RequestDetail() {
                   ))}
                 </div>
               )}
+              {/* PDF viewer component with signature capabilities */}
               <DocumentViewer
                 documentUrl={files[selectedFileIndex]?.path || ''}
                 steps={steps}
@@ -286,7 +358,7 @@ export default function RequestDetail() {
         </TabsContent>
       </Tabs>
 
-      {/* Sign Dialog */}
+      {/* ==================== SIGN DIALOG ==================== */}
       <Dialog open={signDialogOpen} onOpenChange={setSignDialogOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
@@ -309,7 +381,7 @@ export default function RequestDetail() {
         </DialogContent>
       </Dialog>
 
-      {/* Return Dialog */}
+      {/* ==================== RETURN DIALOG ==================== */}
       <Dialog open={returnDialogOpen} onOpenChange={setReturnDialogOpen}>
         <DialogContent>
           <DialogHeader>

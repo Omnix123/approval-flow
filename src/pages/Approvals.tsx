@@ -1,3 +1,22 @@
+/**
+ * Approvals.tsx — Approver's Queue (Route: /approvals)
+ * 
+ * PURPOSE: Shows all requests that are waiting for the current user's signature,
+ * plus a history of requests they've already reviewed.
+ * 
+ * TWO SECTIONS:
+ * 1. "Awaiting Your Signature" — requests where the user is the next approver
+ * 2. "Recently Reviewed" — requests where the user has already signed or returned
+ * 
+ * HOW "PENDING" IS DETERMINED:
+ * A request appears in the pending section when:
+ * - One of its approval steps is assigned to the current user
+ * - That step's status is WAITING
+ * - All previous steps in the chain are APPROVED (sequential enforcement)
+ * 
+ * This is the same logic used on the Dashboard but displayed as a dedicated page.
+ */
+
 import { useMemo } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
@@ -10,6 +29,10 @@ export default function Approvals() {
   const { data: allRequests = [], isLoading } = useRequests();
   const { data: allSteps = {} } = useAllSteps();
 
+  /**
+   * Find requests where the current user is the NEXT approver.
+   * Sequential enforcement: previous step must be APPROVED before this step is actionable.
+   */
   const pendingApprovals = useMemo(() => {
     if (!user) return [];
     return allRequests.filter((request) => {
@@ -22,6 +45,10 @@ export default function Approvals() {
     });
   }, [user, allRequests, allSteps]);
 
+  /**
+   * Find requests where the current user has already acted (signed or returned).
+   * Shows the user's review history for reference.
+   */
   const completedApprovals = useMemo(() => {
     if (!user) return [];
     return allRequests.filter((request) => {
@@ -33,12 +60,14 @@ export default function Approvals() {
     });
   }, [user, allRequests, allSteps]);
 
+  // Loading state
   if (isLoading) {
     return <div className="flex items-center justify-center py-12"><div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" /></div>;
   }
 
   return (
     <div className="space-y-8 animate-fade-in">
+      {/* Page header */}
       <div>
         <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
           <ClipboardCheck className="h-6 w-6" />My Approvals
@@ -46,6 +75,7 @@ export default function Approvals() {
         <p className="text-muted-foreground mt-1">Review and sign procurement requests awaiting your approval</p>
       </div>
 
+      {/* Section 1: Pending approvals */}
       <section>
         <h2 className="text-lg font-semibold mb-4">
           Awaiting Your Signature
@@ -68,6 +98,7 @@ export default function Approvals() {
         )}
       </section>
 
+      {/* Section 2: Previously reviewed */}
       {completedApprovals.length > 0 && (
         <section>
           <h2 className="text-lg font-semibold mb-4">Recently Reviewed</h2>

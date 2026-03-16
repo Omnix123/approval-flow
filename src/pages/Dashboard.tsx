@@ -1,3 +1,25 @@
+/**
+ * Dashboard.tsx — Main Dashboard Page (Route: /)
+ * 
+ * PURPOSE: The first page users see after logging in. Provides a high-level
+ * overview of all procurement requests and highlights items needing attention.
+ * 
+ * SECTIONS:
+ * 1. Welcome header with user's first name
+ * 2. Statistics cards (Total, Pending, In Progress, Approved)
+ * 3. "Awaiting Your Approval" — requests where the current user is the next approver
+ * 4. "Recent Requests" — the 4 most recently created requests
+ * 
+ * DATA FLOW:
+ * - useRequests() fetches all procurement requests from the database
+ * - useAllSteps() fetches all approval steps, grouped by request_id
+ * - Both use React Query for caching (data refreshes automatically)
+ * 
+ * PERFORMANCE:
+ * - useMemo prevents recalculation of stats/pending lists on every render
+ * - Only recalculates when the underlying data (allRequests, allSteps, user) changes
+ */
+
 import { useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
@@ -10,10 +32,18 @@ import {
 } from 'lucide-react';
 
 export default function Dashboard() {
+  // Get current user info from auth context
   const { user } = useAuth();
+  
+  // Fetch all requests and approval steps from the database
   const { data: allRequests = [], isLoading: reqLoading } = useRequests();
   const { data: allSteps = {}, isLoading: stepsLoading } = useAllSteps();
 
+  /**
+   * Calculate summary statistics from all requests.
+   * useMemo ensures this only recalculates when allRequests changes,
+   * not on every component re-render.
+   */
   const stats = useMemo(() => {
     const pending = allRequests.filter(r => r.status === 'PENDING').length;
     const inProgress = allRequests.filter(r => r.status === 'IN_PROGRESS').length;
@@ -22,6 +52,15 @@ export default function Dashboard() {
     return { pending, inProgress, approved, returned, total: allRequests.length };
   }, [allRequests]);
 
+  /**
+   * Find requests where the current user is the NEXT approver in the chain.
+   * 
+   * A step is "actionable" when:
+   * 1. It's assigned to the current user (approver_id matches)
+   * 2. Its status is WAITING (hasn't been signed or returned yet)
+   * 3. It's the first step (order_index === 0) OR the previous step is APPROVED
+   *    (enforces sequential approval order)
+   */
   const pendingApprovals = useMemo(() => {
     if (!user) return [];
     return allRequests.filter(request => {
@@ -34,8 +73,10 @@ export default function Dashboard() {
     });
   }, [user, allRequests, allSteps]);
 
+  // Show the 4 most recent requests (already sorted by created_at DESC from the query)
   const recentRequests = allRequests.slice(0, 4);
 
+  // Configuration for the statistics cards displayed at the top
   const statCards = [
     { label: 'Total Requests', value: stats.total, icon: FileText, color: 'text-foreground' },
     { label: 'Pending', value: stats.pending, icon: Clock, color: 'text-warning' },
@@ -43,6 +84,7 @@ export default function Dashboard() {
     { label: 'Approved', value: stats.approved, icon: CheckCircle2, color: 'text-success' },
   ];
 
+  // Show loading spinner while data is being fetched
   if (reqLoading || stepsLoading) {
     return (
       <div className="flex items-center justify-center py-12">
@@ -53,6 +95,7 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-8 animate-fade-in">
+      {/* Welcome header with "New Request" button */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-foreground">Welcome back, {user?.name?.split(' ')[0]}</h1>
@@ -63,6 +106,7 @@ export default function Dashboard() {
         </Button>
       </div>
 
+      {/* Statistics cards — 2 columns on mobile, 4 on desktop */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {statCards.map((stat) => (
           <Card key={stat.label} className="shadow-card">
@@ -81,6 +125,7 @@ export default function Dashboard() {
         ))}
       </div>
 
+      {/* Pending approvals section — only shown if user has items to approve */}
       {pendingApprovals.length > 0 && (
         <section>
           <div className="flex items-center justify-between mb-4">
@@ -99,6 +144,7 @@ export default function Dashboard() {
         </section>
       )}
 
+      {/* Recent requests section */}
       <section>
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-semibold">Recent Requests</h2>

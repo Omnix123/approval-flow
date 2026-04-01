@@ -132,6 +132,30 @@ export type Database = {
           },
         ]
       }
+      positions: {
+        Row: {
+          access_level: string
+          created_at: string
+          description: string | null
+          id: string
+          name: string
+        }
+        Insert: {
+          access_level?: string
+          created_at?: string
+          description?: string | null
+          id?: string
+          name: string
+        }
+        Update: {
+          access_level?: string
+          created_at?: string
+          description?: string | null
+          id?: string
+          name?: string
+        }
+        Relationships: []
+      }
       procurement_requests: {
         Row: {
           created_at: string
@@ -172,6 +196,7 @@ export type Database = {
           email: string
           id: string
           name: string
+          position_id: string | null
           updated_at: string
         }
         Insert: {
@@ -180,6 +205,7 @@ export type Database = {
           email: string
           id: string
           name: string
+          position_id?: string | null
           updated_at?: string
         }
         Update: {
@@ -188,9 +214,18 @@ export type Database = {
           email?: string
           id?: string
           name?: string
+          position_id?: string | null
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "profiles_position_id_fkey"
+            columns: ["position_id"]
+            isOneToOne: false
+            referencedRelation: "positions"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       qr_signing_tokens: {
         Row: {

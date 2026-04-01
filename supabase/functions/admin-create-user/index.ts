@@ -45,7 +45,7 @@ Deno.serve(async (req) => {
     if (!isAdmin) throw new Error("Unauthorized: Admin role required");
 
     // 2. Parse and validate input
-    const { name, email, password, role, department } = await req.json();
+    const { name, email, password, role, department, positionId } = await req.json();
 
     if (!name || typeof name !== "string" || name.trim().length < 2) {
       throw new Error("Name must be at least 2 characters");
@@ -72,9 +72,12 @@ Deno.serve(async (req) => {
 
     if (createError) throw new Error(createError.message);
 
-    // 4. Update department on profile (trigger creates basic profile)
-    if (department) {
-      await adminClient.from("profiles").update({ department }).eq("id", newUser.user!.id);
+    // 4. Update department and position on profile (trigger creates basic profile)
+    const profileUpdate: Record<string, any> = {};
+    if (department) profileUpdate.department = department;
+    if (positionId) profileUpdate.position_id = positionId;
+    if (Object.keys(profileUpdate).length > 0) {
+      await adminClient.from("profiles").update(profileUpdate).eq("id", newUser.user!.id);
     }
 
     // 5. Set role (trigger creates 'user' role, update if different)

@@ -47,10 +47,19 @@ export const addUserSchema = z.object({
     .regex(/^[a-zA-Z\s\-'.]+$/, 'Name contains invalid characters'),
   email: z.string().trim().email('Please enter a valid email address').max(255, 'Email is too long'),
   password: z.string().min(6, 'Password must be at least 6 characters').max(128, 'Password is too long'),
-  role: z.enum(['user', 'approver', 'admin'], { required_error: 'Please select a role' }),
+  role: z.enum(['user', 'approver', 'admin'], { required_error: 'Please select an access level' }),
   department: z.string().trim().max(100, 'Department name is too long').optional().or(z.literal('')),
+  positionId: z.string().uuid('Please select a position').optional(),
 });
 export type AddUserInput = z.infer<typeof addUserSchema>;
+
+/** Admin: Create position validation */
+export const createPositionSchema = z.object({
+  name: z.string().trim().min(2, 'Position name must be at least 2 characters').max(100, 'Position name is too long'),
+  accessLevel: z.enum(['user', 'approver', 'admin'], { required_error: 'Please select an access level' }),
+  description: z.string().trim().max(255, 'Description is too long').optional().or(z.literal('')),
+});
+export type CreatePositionInput = z.infer<typeof createPositionSchema>;
 
 /** Comment validation */
 export const commentSchema = z.object({

@@ -1,29 +1,13 @@
 /**
  * CreateRequest.tsx — New Procurement Request Wizard (Route: /create)
  * 
- * PURPOSE: A 2-step wizard that guides users through creating a new procurement request.
- * 
  * WIZARD STEPS:
  * 1. DETAILS — Enter request title, vendor name, and upload supporting documents
  * 2. APPROVERS — Select which approvers should sign, and in what order
- * 
- * HOW APPROVAL ORDER WORKS:
- * - Approvers are selected via checkboxes
- * - The ORDER in which they are selected determines the approval chain
- * - e.g., Click "Alice" then "Bob" → Alice must sign first, then Bob
- * - A numbered badge shows each approver's position in the chain
- * 
- * DATA FLOW:
- * 1. useApproverProfiles() fetches all users with 'approver' or 'admin' roles
- * 2. On submit, useCreateRequest() mutation:
- *    a. Creates the procurement_request record (auto-generates REQ-XXXX)
- *    b. Creates approval_steps in the selected order
- *    c. Uploads files to storage bucket
- *    d. Logs the action in audit_logs
- * 3. React Query invalidates caches → Dashboard/RequestList update automatically
+ * 3. SIGNATURES — Place signature fields on the uploaded PDF for each approver
  */
 
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
@@ -32,12 +16,16 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useApproverProfiles, useCreateRequest } from '@/hooks/useSupabaseData';
-import { ArrowLeft, Upload, X, Users, FileText, Building2, Loader2, ChevronRight, ChevronLeft } from 'lucide-react';
+import { DocumentViewer } from '@/components/DocumentViewer';
+import { SignaturePlacement } from '@/components/PDFViewer';
+import { ArrowLeft, Upload, X, Users, FileText, Building2, Loader2, ChevronRight, ChevronLeft, Pen } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 
-/** The two steps of the wizard */
-type WizardStep = 'details' | 'approvers';
+type WizardStep = 'details' | 'approvers' | 'signatures';
+
+const WIZARD_STEPS: WizardStep[] = ['details', 'approvers', 'signatures'];
+const STEP_LABELS = ['Request Details', 'Approval Chain', 'Signature Placement'];
 
 export default function CreateRequest() {
   const navigate = useNavigate();
@@ -49,58 +37,74 @@ export default function CreateRequest() {
   const [vendorName, setVendorName] = useState('');
   const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
 
-  // Form state for step 2 (approvers) — array of user IDs in signing order
+  // Form state for step 2 (approvers)
   const [selectedApprovers, setSelectedApprovers] = useState<string[]>([]);
 
-  // Fetch all users who have the 'approver' or 'admin' role
+  // Form state for step 3 (signature placements)
+  const [signaturePlacements, setSignaturePlacements] = useState<SignaturePlacement[]>([]);
+
   const { data: approverProfiles = [], isLoading: approversLoading } = useApproverProfiles();
   const createRequest = useCreateRequest();
 
-  // Don't show the current user as an approver (can't approve your own request)
   const availableApprovers = approverProfiles.filter((a) => a.id !== user?.id);
 
-  /** Handle file input — append new files to the existing list */
+  // Create a blob URL for the first uploaded PDF for signature placement
+  const pdfFile = uploadedFiles.find(f => f.type === 'application/pdf' || f.name.endsWith('.pdf'));
+  const pdfBlobUrl = useMemo(() => {
+    if (!pdfFile) return '';
+    return URL.createObjectURL(pdfFile);
+  }, [pdfFile]);
+
+  // Build mock approval steps for DocumentViewer
+  const mockSteps = useMemo(() => {
+    return selectedApprovers.map((id, index) => {
+      const approver = availableApprovers.find(a => a.id === id);
+      return {
+        id: `temp-step-${index}`,
+        request_id: 'temp',
+        order_index: index,
+        approver_id: id,
+        approver_name: approver?.name || 'Unknown',
+        status: 'WAITING' as const,
+      };
+    });
+  }, [selectedApprovers, availableApprovers]);
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files) return;
     setUploadedFiles((prev) => [...prev, ...Array.from(e.target.files!)]);
   };
 
-  /** Remove a specific file from the upload list */
   const removeFile = (index: number) => {
     setUploadedFiles((prev) => prev.filter((_, i) => i !== index));
   };
 
-  /**
-   * Toggle an approver's selection.
-   * If already selected → remove from list.
-   * If not selected → add to end of list (determines their position in the chain).
-   */
   const toggleApprover = (approverId: string) => {
     setSelectedApprovers((prev) =>
       prev.includes(approverId) ? prev.filter((id) => id !== approverId) : [...prev, approverId]
     );
   };
 
-  // Can't proceed to step 2 without a title
   const canGoToApprovers = title.trim().length > 0;
+  const canGoToSignatures = selectedApprovers.length > 0;
+  const currentStepIndex = WIZARD_STEPS.indexOf(wizardStep);
 
-  /** Navigate forward in the wizard */
   const goNext = () => {
     if (wizardStep === 'details') {
       if (!title.trim()) { toast.error('Please enter a request title'); return; }
       setWizardStep('approvers');
+    } else if (wizardStep === 'approvers') {
+      if (selectedApprovers.length === 0) { toast.error('Please select at least one approver'); return; }
+      if (!pdfFile) { toast.error('Please upload a PDF document first to place signatures'); return; }
+      setWizardStep('signatures');
     }
   };
 
-  /** Navigate backward in the wizard */
   const goBack = () => {
     if (wizardStep === 'approvers') setWizardStep('details');
+    else if (wizardStep === 'signatures') setWizardStep('approvers');
   };
 
-  /**
-   * Submit the request — called when user clicks "Create Request" on step 2.
-   * Delegates to the useCreateRequest mutation which handles all database operations.
-   */
   const handleSubmit = () => {
     if (selectedApprovers.length === 0) { toast.error('Please select at least one approver'); return; }
 
@@ -118,7 +122,7 @@ export default function CreateRequest() {
 
   return (
     <div className="max-w-4xl mx-auto space-y-6 animate-fade-in">
-      {/* Header with back button */}
+      {/* Header */}
       <div className="flex items-center gap-4">
         <Button variant="ghost" size="icon" asChild>
           <Link to="/"><ArrowLeft className="h-5 w-5" /></Link>
@@ -126,23 +130,23 @@ export default function CreateRequest() {
         <div>
           <h1 className="text-2xl font-bold text-foreground">New Procurement Request</h1>
           <p className="text-muted-foreground">
-            {wizardStep === 'details' && 'Step 1: Enter request details and upload documents'}
-            {wizardStep === 'approvers' && 'Step 2: Select the approval chain'}
+            Step {currentStepIndex + 1}: {STEP_LABELS[currentStepIndex]}
           </p>
         </div>
       </div>
 
-      {/* Progress indicator — shows which wizard step is active */}
+      {/* Progress indicator */}
       <div className="flex items-center gap-2">
-        {(['details', 'approvers'] as WizardStep[]).map((step, i) => (
+        {WIZARD_STEPS.map((step, i) => (
           <div key={step} className="flex items-center gap-2">
             <div className={cn(
               'w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold',
               wizardStep === step ? 'bg-primary text-primary-foreground' :
-              (['details', 'approvers'].indexOf(wizardStep) > i)
-                ? 'bg-primary/20 text-primary' : 'bg-secondary text-muted-foreground'
+              currentStepIndex > i ? 'bg-primary/20 text-primary' : 'bg-secondary text-muted-foreground'
             )}>{i + 1}</div>
-            {i < 1 && <div className={cn('w-12 h-0.5', (['details', 'approvers'].indexOf(wizardStep) > i) ? 'bg-primary' : 'bg-border')} />}
+            {i < WIZARD_STEPS.length - 1 && (
+              <div className={cn('w-12 h-0.5', currentStepIndex > i ? 'bg-primary' : 'bg-border')} />
+            )}
           </div>
         ))}
       </div>
@@ -150,7 +154,6 @@ export default function CreateRequest() {
       {/* ==================== STEP 1: Request Details ==================== */}
       {wizardStep === 'details' && (
         <div className="space-y-6">
-          {/* Title & Vendor card */}
           <Card>
             <CardHeader>
               <CardTitle className="text-lg flex items-center gap-2"><FileText className="h-5 w-5" />Request Details</CardTitle>
@@ -167,14 +170,12 @@ export default function CreateRequest() {
             </CardContent>
           </Card>
 
-          {/* File upload card */}
           <Card>
             <CardHeader>
               <CardTitle className="text-lg flex items-center gap-2"><Upload className="h-5 w-5" />Documents</CardTitle>
-              <CardDescription>Upload PDF or Word documents</CardDescription>
+              <CardDescription>Upload PDF documents (required for signature placement)</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              {/* Drop zone — styled file input */}
               <div className="border-2 border-dashed border-border rounded-lg p-8 text-center hover:border-primary/50 transition-colors">
                 <input type="file" id="file-upload" multiple accept=".pdf,.doc,.docx,.xls,.xlsx" onChange={handleFileChange} className="hidden" />
                 <label htmlFor="file-upload" className="cursor-pointer">
@@ -183,7 +184,6 @@ export default function CreateRequest() {
                   <p className="text-sm text-muted-foreground mt-1">PDF, DOC, DOCX, XLS, XLSX (max 10MB)</p>
                 </label>
               </div>
-              {/* List of uploaded files with remove button */}
               {uploadedFiles.length > 0 && (
                 <div className="space-y-2">
                   {uploadedFiles.map((file, index) => (
@@ -236,7 +236,6 @@ export default function CreateRequest() {
                         <p className="font-medium">{approver.name}</p>
                         <p className="text-sm text-muted-foreground">{approver.department || 'No department'} • {approver.role}</p>
                       </div>
-                      {/* Show position number when selected */}
                       {isSelected && (
                         <div className="flex items-center justify-center w-8 h-8 rounded-full bg-primary text-primary-foreground text-sm font-bold">{orderIndex + 1}</div>
                       )}
@@ -246,7 +245,6 @@ export default function CreateRequest() {
               </div>
             )}
 
-            {/* Show the approval order summary */}
             {selectedApprovers.length > 0 && (
               <div className="mt-4 p-3 bg-secondary rounded-lg">
                 <p className="text-sm font-medium mb-2">Approval Order:</p>
@@ -266,19 +264,66 @@ export default function CreateRequest() {
         </Card>
       )}
 
-      {/* Navigation buttons — Back, Cancel, Next/Create */}
+      {/* ==================== STEP 3: Signature Placement ==================== */}
+      {wizardStep === 'signatures' && (
+        <div className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg flex items-center gap-2"><Pen className="h-5 w-5" />Place Signature Fields</CardTitle>
+              <CardDescription>
+                Click on the document to place a signature field for each approver. 
+                You can drag and resize the fields after placing them.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="p-0">
+              <div className="p-4 bg-muted/50 border-b">
+                <p className="text-sm text-muted-foreground">
+                  <strong>Approvers to place:</strong>{' '}
+                  {selectedApprovers.map((id, i) => {
+                    const approver = availableApprovers.find(a => a.id === id);
+                    const hasPlacement = signaturePlacements.some(p => p.stepIndex === i);
+                    return (
+                      <span key={id} className={cn(
+                        'inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs mr-2',
+                        hasPlacement ? 'bg-primary/20 text-primary' : 'bg-destructive/10 text-destructive'
+                      )}>
+                        {i + 1}. {approver?.name} {hasPlacement ? '✓' : '(click doc to place)'}
+                      </span>
+                    );
+                  })}
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+
+          {pdfBlobUrl && (
+            <DocumentViewer
+              documentUrl={pdfBlobUrl}
+              steps={mockSteps}
+              currentUserStepId={mockSteps[0]?.id}
+              isEditing={true}
+              placements={signaturePlacements}
+            />
+          )}
+        </div>
+      )}
+
+      {/* Navigation buttons */}
       <div className="flex gap-4">
         {wizardStep !== 'details' && (
           <Button type="button" variant="outline" onClick={goBack}><ChevronLeft className="mr-1 h-4 w-4" />Back</Button>
         )}
         <div className="flex-1" />
         <Button type="button" variant="outline" onClick={() => navigate('/')}>Cancel</Button>
-        {wizardStep === 'approvers' ? (
-          <Button onClick={handleSubmit} disabled={createRequest.isPending || selectedApprovers.length === 0}>
+        {wizardStep === 'signatures' ? (
+          <Button onClick={handleSubmit} disabled={createRequest.isPending}>
             {createRequest.isPending ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Creating...</> : 'Create Request'}
           </Button>
         ) : (
-          <Button onClick={goNext} disabled={!canGoToApprovers}>
+          <Button onClick={goNext} disabled={
+            (wizardStep === 'details' && !canGoToApprovers) ||
+            (wizardStep === 'approvers' && !canGoToSignatures)
+          }>
             Next<ChevronRight className="ml-1 h-4 w-4" />
           </Button>
         )}

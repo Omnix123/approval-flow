@@ -22,8 +22,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { FileText, Loader2, AlertCircle } from 'lucide-react';
 
 export default function Login() {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const [email, setEmail] = useState('your.email@ema.gov');
+  const [password, setPassword] = useState('123456');
   const [name, setName] = useState('');
   const [department, setDepartment] = useState('');
   const [error, setError] = useState('');

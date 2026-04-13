@@ -193,6 +193,7 @@ export function useCreateRequest() {
       vendorName: string;
       approverIds: string[];
       files: File[];
+      documentType?: string;
     }) => {
       if (!user) throw new Error('Not authenticated');
 

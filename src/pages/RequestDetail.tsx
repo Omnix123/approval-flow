@@ -56,6 +56,33 @@ export default function RequestDetail() {
   // Tab state and selected document index
   const [activeTab, setActiveTab] = useState('details');
   const [selectedFileIndex, setSelectedFileIndex] = useState(0);
+  const [blobUrl, setBlobUrl] = useState<string | null>(null);
+
+  // Fetch the selected file as a blob to avoid CORS issues with the PDF viewer
+  useEffect(() => {
+    const filePath = files[selectedFileIndex]?.path;
+    if (!filePath) { setBlobUrl(null); return; }
+    let cancelled = false;
+    let url: string | null = null;
+
+    (async () => {
+      try {
+        const response = await fetch(filePath);
+        if (cancelled) return;
+        const blob = await response.blob();
+        if (cancelled) return;
+        url = URL.createObjectURL(blob);
+        setBlobUrl(url);
+      } catch {
+        if (!cancelled) setBlobUrl(null);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      if (url) URL.revokeObjectURL(url);
+    };
+  }, [files, selectedFileIndex]);
 
   // Fetch all data for this specific request (request, steps, files, comments)
   const { data, isLoading } = useRequestDetail(id);

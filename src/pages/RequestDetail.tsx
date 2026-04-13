@@ -360,7 +360,7 @@ export default function RequestDetail() {
               )}
               {/* PDF viewer component with signature capabilities */}
               <DocumentViewer
-                documentUrl={files[selectedFileIndex]?.path || ''}
+                documentUrl={blobUrl || ''}
                 steps={steps}
                 currentUserStepId={currentUserStep?.id}
                 onSign={(sigData) => {

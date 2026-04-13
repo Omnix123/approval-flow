@@ -58,6 +58,17 @@ export default function RequestDetail() {
   const [selectedFileIndex, setSelectedFileIndex] = useState(0);
   const [blobUrl, setBlobUrl] = useState<string | null>(null);
 
+  // Fetch all data for this specific request (request, steps, files, comments)
+  const { data, isLoading } = useRequestDetail(id);
+  const signStepMutation = useSignStep();
+  const returnStepMutation = useReturnStep();
+
+  // Destructure the fetched data with defaults
+  const request = data?.request;
+  const steps = data?.steps || [];
+  const files = data?.files || [];
+  const comments = data?.comments || [];
+
   // Fetch the selected file as a blob to avoid CORS issues with the PDF viewer
   useEffect(() => {
     const filePath = files[selectedFileIndex]?.path;
@@ -83,17 +94,6 @@ export default function RequestDetail() {
       if (url) URL.revokeObjectURL(url);
     };
   }, [files, selectedFileIndex]);
-
-  // Fetch all data for this specific request (request, steps, files, comments)
-  const { data, isLoading } = useRequestDetail(id);
-  const signStepMutation = useSignStep();
-  const returnStepMutation = useReturnStep();
-
-  // Destructure the fetched data with defaults
-  const request = data?.request;
-  const steps = data?.steps || [];
-  const files = data?.files || [];
-  const comments = data?.comments || [];
 
   /**
    * REAL-TIME SUBSCRIPTION

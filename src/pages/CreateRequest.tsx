@@ -2,12 +2,12 @@
  * CreateRequest.tsx — New Procurement Request Wizard (Route: /create)
  * 
  * WIZARD STEPS:
- * 1. DETAILS — Enter request title, vendor name, and upload supporting documents
+ * 1. DETAILS — Enter request title, vendor name, document type, and upload supporting documents
  * 2. APPROVERS — Select which approvers should sign, and in what order
  * 3. SIGNATURES — Place signature fields on the uploaded PDF for each approver
  */
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
@@ -15,14 +15,15 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useApproverProfiles, useCreateRequest } from '@/hooks/useSupabaseData';
-import { DocumentViewer } from '@/components/DocumentViewer';
-import { SignaturePlacement } from '@/components/PDFViewer';
+import { PDFViewer, SignaturePlacement } from '@/components/PDFViewer';
 import { ArrowLeft, Upload, X, Users, FileText, Building2, Loader2, ChevronRight, ChevronLeft, Pen } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 
 type WizardStep = 'details' | 'approvers' | 'signatures';
+type DocumentType = 'payment_requisition' | 'memo';
 
 const WIZARD_STEPS: WizardStep[] = ['details', 'approvers', 'signatures'];
 const STEP_LABELS = ['Request Details', 'Approval Chain', 'Signature Placement'];
@@ -35,6 +36,7 @@ export default function CreateRequest() {
   // Form state for step 1 (details)
   const [title, setTitle] = useState('');
   const [vendorName, setVendorName] = useState('');
+  const [documentType, setDocumentType] = useState<DocumentType>('payment_requisition');
   const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
 
   // Form state for step 2 (approvers)
@@ -42,6 +44,7 @@ export default function CreateRequest() {
 
   // Form state for step 3 (signature placements)
   const [signaturePlacements, setSignaturePlacements] = useState<SignaturePlacement[]>([]);
+  const [activeApproverIndex, setActiveApproverIndex] = useState<number>(0);
 
   const { data: approverProfiles = [], isLoading: approversLoading } = useApproverProfiles();
   const createRequest = useCreateRequest();
@@ -54,21 +57,6 @@ export default function CreateRequest() {
     if (!pdfFile) return '';
     return URL.createObjectURL(pdfFile);
   }, [pdfFile]);
-
-  // Build mock approval steps for DocumentViewer
-  const mockSteps = useMemo(() => {
-    return selectedApprovers.map((id, index) => {
-      const approver = availableApprovers.find(a => a.id === id);
-      return {
-        id: `temp-step-${index}`,
-        request_id: 'temp',
-        order_index: index,
-        approver_id: id,
-        approver_name: approver?.name || 'Unknown',
-        status: 'WAITING' as const,
-      };
-    });
-  }, [selectedApprovers, availableApprovers]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files) return;
@@ -84,6 +72,32 @@ export default function CreateRequest() {
       prev.includes(approverId) ? prev.filter((id) => id !== approverId) : [...prev, approverId]
     );
   };
+
+  // Callbacks for signature placement management
+  const handlePlacementAdd = useCallback((placement: Omit<SignaturePlacement, 'id'>) => {
+    const approver = availableApprovers.find(a => a.id === selectedApprovers[activeApproverIndex]);
+    const newPlacement: SignaturePlacement = {
+      ...placement,
+      id: `placement-${Date.now()}`,
+      stepIndex: activeApproverIndex,
+      label: approver ? approver.name : `Approver ${activeApproverIndex + 1}`,
+    };
+    setSignaturePlacements((prev) => [...prev, newPlacement]);
+    toast.success(`Signature field placed for ${newPlacement.label}`);
+  }, [activeApproverIndex, selectedApprovers, availableApprovers]);
+
+  const handlePlacementRemove = useCallback((id: string) => {
+    setSignaturePlacements((prev) => prev.filter((p) => p.id !== id));
+    toast.success('Signature field removed');
+  }, []);
+
+  const handlePlacementResize = useCallback((id: string, width: number, height: number) => {
+    setSignaturePlacements((prev) => prev.map((p) => p.id === id ? { ...p, width, height } : p));
+  }, []);
+
+  const handlePlacementMove = useCallback((id: string, x: number, y: number) => {
+    setSignaturePlacements((prev) => prev.map((p) => p.id === id ? { ...p, x, y } : p));
+  }, []);
 
   const canGoToApprovers = title.trim().length > 0;
   const canGoToSignatures = selectedApprovers.length > 0;
@@ -109,7 +123,7 @@ export default function CreateRequest() {
     if (selectedApprovers.length === 0) { toast.error('Please select at least one approver'); return; }
 
     createRequest.mutate(
-      { title, vendorName, approverIds: selectedApprovers, files: uploadedFiles },
+      { title, vendorName, approverIds: selectedApprovers, files: uploadedFiles, documentType },
       {
         onSuccess: () => {
           toast.success('Request created successfully!');
@@ -128,7 +142,7 @@ export default function CreateRequest() {
           <Link to="/"><ArrowLeft className="h-5 w-5" /></Link>
         </Button>
         <div>
-          <h1 className="text-2xl font-bold text-foreground">New Procurement Request</h1>
+          <h1 className="text-2xl font-bold text-foreground">New Request</h1>
           <p className="text-muted-foreground">
             Step {currentStepIndex + 1}: {STEP_LABELS[currentStepIndex]}
           </p>
@@ -160,13 +174,34 @@ export default function CreateRequest() {
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="title">Request Title *</Label>
-                <Input id="title" placeholder="e.g., Office Stationery Supplies Q1" value={title} onChange={(e) => setTitle(e.target.value)} />
+                <Label htmlFor="doc-type">Document Type *</Label>
+                <Select value={documentType} onValueChange={(v) => setDocumentType(v as DocumentType)}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="payment_requisition">Payment Requisition (PRS/2)</SelectItem>
+                    <SelectItem value="memo">Memorandum</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="vendor" className="flex items-center gap-2"><Building2 className="h-4 w-4" />Vendor Name</Label>
-                <Input id="vendor" placeholder="e.g., Office Solutions Ltd" value={vendorName} onChange={(e) => setVendorName(e.target.value)} />
+                <Label htmlFor="title">
+                  {documentType === 'memo' ? 'Subject *' : 'Request Title *'}
+                </Label>
+                <Input
+                  id="title"
+                  placeholder={documentType === 'memo' ? 'e.g., Request for Payment of Monthly Internet Data Bundles' : 'e.g., Office Stationery Supplies Q1'}
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                />
               </div>
+              {documentType === 'payment_requisition' && (
+                <div className="space-y-2">
+                  <Label htmlFor="vendor" className="flex items-center gap-2"><Building2 className="h-4 w-4" />Vendor Name</Label>
+                  <Input id="vendor" placeholder="e.g., Office Solutions Ltd" value={vendorName} onChange={(e) => setVendorName(e.target.value)} />
+                </div>
+              )}
             </CardContent>
           </Card>
 
@@ -271,39 +306,73 @@ export default function CreateRequest() {
             <CardHeader>
               <CardTitle className="text-lg flex items-center gap-2"><Pen className="h-5 w-5" />Place Signature Fields</CardTitle>
               <CardDescription>
-                Click on the document to place a signature field for each approver. 
-                You can drag and resize the fields after placing them.
+                Select an approver below, then click "Add Signature" on the document toolbar and click on the PDF to place their signature field.
               </CardDescription>
             </CardHeader>
-            <CardContent className="p-0">
-              <div className="p-4 bg-muted/50 border-b">
-                <p className="text-sm text-muted-foreground">
-                  <strong>Approvers to place:</strong>{' '}
-                  {selectedApprovers.map((id, i) => {
-                    const approver = availableApprovers.find(a => a.id === id);
-                    const hasPlacement = signaturePlacements.some(p => p.stepIndex === i);
-                    return (
-                      <span key={id} className={cn(
-                        'inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs mr-2',
+            <CardContent className="space-y-4">
+              {/* Approver selector */}
+              <div className="space-y-2">
+                <Label>Placing signature for:</Label>
+                <Select
+                  value={String(activeApproverIndex)}
+                  onValueChange={(v) => setActiveApproverIndex(Number(v))}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {selectedApprovers.map((id, i) => {
+                      const approver = availableApprovers.find(a => a.id === id);
+                      const hasPlacement = signaturePlacements.some(p => p.stepIndex === i);
+                      return (
+                        <SelectItem key={id} value={String(i)}>
+                          {i + 1}. {approver?.name || 'Unknown'} {hasPlacement ? '✓' : ''}
+                        </SelectItem>
+                      );
+                    })}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Status chips */}
+              <div className="flex flex-wrap gap-2">
+                {selectedApprovers.map((id, i) => {
+                  const approver = availableApprovers.find(a => a.id === id);
+                  const hasPlacement = signaturePlacements.some(p => p.stepIndex === i);
+                  return (
+                    <span
+                      key={id}
+                      className={cn(
+                        'inline-flex items-center gap-1 px-2 py-1 rounded text-xs cursor-pointer',
+                        activeApproverIndex === i ? 'ring-2 ring-primary' : '',
                         hasPlacement ? 'bg-primary/20 text-primary' : 'bg-destructive/10 text-destructive'
-                      )}>
-                        {i + 1}. {approver?.name} {hasPlacement ? '✓' : '(click doc to place)'}
-                      </span>
-                    );
-                  })}
-                </p>
+                      )}
+                      onClick={() => setActiveApproverIndex(i)}
+                    >
+                      {i + 1}. {approver?.name} {hasPlacement ? '✓' : '✗'}
+                    </span>
+                  );
+                })}
               </div>
             </CardContent>
           </Card>
 
           {pdfBlobUrl && (
-            <DocumentViewer
-              documentUrl={pdfBlobUrl}
-              steps={mockSteps}
-              currentUserStepId={mockSteps[0]?.id}
-              isEditing={true}
-              placements={signaturePlacements}
-            />
+            <div className="border rounded-lg overflow-hidden">
+              <div className="h-[600px]">
+                <PDFViewer
+                  url={pdfBlobUrl}
+                  placements={signaturePlacements}
+                  onPlacementAdd={handlePlacementAdd}
+                  onPlacementRemove={handlePlacementRemove}
+                  onPlacementResize={handlePlacementResize}
+                  onPlacementMove={handlePlacementMove}
+                  isEditing={true}
+                  currentStepIndex={activeApproverIndex}
+                  readOnly={false}
+                />
+              </div>
+            </div>
           )}
         </div>
       )}

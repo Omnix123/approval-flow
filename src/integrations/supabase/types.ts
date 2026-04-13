@@ -180,6 +180,7 @@ export type Database = {
       procurement_requests: {
         Row: {
           created_at: string
+          document_type: string
           id: string
           requester_id: string
           short_id: string
@@ -190,6 +191,7 @@ export type Database = {
         }
         Insert: {
           created_at?: string
+          document_type?: string
           id?: string
           requester_id: string
           short_id: string
@@ -200,6 +202,7 @@ export type Database = {
         }
         Update: {
           created_at?: string
+          document_type?: string
           id?: string
           requester_id?: string
           short_id?: string

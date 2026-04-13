@@ -200,7 +200,13 @@ export function useCreateRequest() {
       // 1. Create the request
       const { data: req, error: reqError } = await supabase
         .from('procurement_requests')
-        .insert({ title: params.title, vendor_name: params.vendorName || null, requester_id: user.id, short_id: '' })
+        .insert({
+          title: params.title,
+          vendor_name: params.vendorName || null,
+          requester_id: user.id,
+          short_id: '',
+          document_type: params.documentType || 'payment_requisition',
+        } as any)
         .select()
         .single();
 

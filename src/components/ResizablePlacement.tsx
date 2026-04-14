@@ -54,8 +54,8 @@ export function ResizablePlacement({
       const rect = container.getBoundingClientRect();
       const dx = ((clientX - startPos.current.x) / rect.width) * 100;
       const dy = ((clientY - startPos.current.y) / rect.height) * 100;
-      const newW = Math.max(5, Math.min(60, startPos.current.w + dx));
-      const newH = Math.max(3, Math.min(30, startPos.current.h + dy));
+      const newW = Math.max(1, Math.min(100, startPos.current.w + dx));
+      const newH = Math.max(1, Math.min(100, startPos.current.h + dy));
       onResize?.(placement.id, newW, newH);
     };
     const handleUp = () => setResizing(false);
@@ -126,7 +126,7 @@ export function ResizablePlacement({
         <img
           src={signedOverlay.signatureDataUrl}
           alt={`Signature by ${signedOverlay.approverName}`}
-          className="w-full h-full object-contain"
+          className="w-full h-full object-fill"
         />
         <div className="absolute -bottom-5 left-0 right-0 text-center">
           <span className="text-[10px] font-medium text-success bg-white/80 px-1 rounded">

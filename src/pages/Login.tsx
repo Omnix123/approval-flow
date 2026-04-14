@@ -19,7 +19,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { FileText, Loader2, AlertCircle } from 'lucide-react';
+import { FileText, Loader2, AlertCircle, User } from 'lucide-react';
 
 export default function Login() {
   const [email, setEmail] = useState('your.email@ema.gov');
@@ -114,6 +114,31 @@ export default function Login() {
                     {isLoading ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Signing In...</> : 'Sign In'}
                   </Button>
                 </form>
+
+                {/* Demo accounts for quick testing */}
+                <div className="mt-4 pt-4 border-t border-border">
+                  <p className="text-xs text-muted-foreground mb-2 text-center">Quick Login (Demo Accounts)</p>
+                  <div className="grid grid-cols-1 gap-2">
+                    {[
+                      { name: 'Brendon (Admin)', email: 'your.email@ema.gov', password: '123456' },
+                      { name: 'Blessing (Approver)', email: 'you.email@ema.gov', password: '123456' },
+                      { name: 'David (Approver)', email: 'david@ema.gov', password: 'demo123' },
+                      { name: 'Admin Test', email: 'admin@ema.test', password: 'demo123' },
+                    ].map((account) => (
+                      <Button
+                        key={account.email}
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="w-full justify-start text-xs h-8"
+                        onClick={() => { setEmail(account.email); setPassword(account.password); setError(''); }}
+                      >
+                        <User className="h-3 w-3 mr-2 shrink-0" />
+                        <span className="truncate">{account.name} — {account.email}</span>
+                      </Button>
+                    ))}
+                  </div>
+                </div>
               </TabsContent>
 
               <TabsContent value="signup" className="mt-0">

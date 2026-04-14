@@ -69,7 +69,7 @@ export default function RequestDetail() {
   const files = data?.files || [];
   const comments = data?.comments || [];
 
-  // Fetch the selected file as a blob to avoid CORS issues with the PDF viewer
+  // Fetch the selected file as a blob via Supabase storage download to avoid CORS
   useEffect(() => {
     const filePath = files[selectedFileIndex]?.path;
     if (!filePath) { setBlobUrl(null); return; }
@@ -78,11 +78,24 @@ export default function RequestDetail() {
 
     (async () => {
       try {
-        const response = await fetch(filePath);
+        // Extract the storage path from the full URL
+        const marker = '/object/public/request-files/';
+        const idx = filePath.indexOf(marker);
+        if (idx === -1) {
+          // Fallback: try direct fetch
+          const response = await fetch(filePath);
+          if (cancelled) return;
+          const blob = await response.blob();
+          if (cancelled) return;
+          url = URL.createObjectURL(blob);
+          setBlobUrl(url);
+          return;
+        }
+        const storagePath = decodeURIComponent(filePath.substring(idx + marker.length));
+        const { data, error } = await supabase.storage.from('request-files').download(storagePath);
         if (cancelled) return;
-        const blob = await response.blob();
-        if (cancelled) return;
-        url = URL.createObjectURL(blob);
+        if (error || !data) { setBlobUrl(null); return; }
+        url = URL.createObjectURL(data);
         setBlobUrl(url);
       } catch {
         if (!cancelled) setBlobUrl(null);

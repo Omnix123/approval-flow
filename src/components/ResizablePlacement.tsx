@@ -54,8 +54,8 @@ export function ResizablePlacement({
       const rect = container.getBoundingClientRect();
       const dx = ((clientX - startPos.current.x) / rect.width) * 100;
       const dy = ((clientY - startPos.current.y) / rect.height) * 100;
-      const newW = Math.max(5, Math.min(60, startPos.current.w + dx));
-      const newH = Math.max(3, Math.min(30, startPos.current.h + dy));
+      const newW = Math.max(1, Math.min(100, startPos.current.w + dx));
+      const newH = Math.max(1, Math.min(100, startPos.current.h + dy));
       onResize?.(placement.id, newW, newH);
     };
     const handleUp = () => setResizing(false);

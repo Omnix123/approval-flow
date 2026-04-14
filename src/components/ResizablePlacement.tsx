@@ -126,7 +126,7 @@ export function ResizablePlacement({
         <img
           src={signedOverlay.signatureDataUrl}
           alt={`Signature by ${signedOverlay.approverName}`}
-          className="w-full h-full object-contain"
+          className="w-full h-full object-fill"
         />
         <div className="absolute -bottom-5 left-0 right-0 text-center">
           <span className="text-[10px] font-medium text-success bg-white/80 px-1 rounded">

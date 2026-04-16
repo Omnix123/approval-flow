@@ -21,6 +21,8 @@ interface DocumentViewerProps {
   isEditing?: boolean;
   placements?: SignaturePlacement[];
   requestId?: string;
+  allowPlacementAdjustments?: boolean;
+  onPlacementUpdate?: (placementId: string, updates: Pick<SignaturePlacement, 'x' | 'y' | 'width' | 'height'>) => void;
 }
 
 function resolveDocumentUrl(url: string) {
@@ -39,37 +41,42 @@ export function DocumentViewer({
   isEditing = false,
   placements: externalPlacements,
   requestId,
+  allowPlacementAdjustments = false,
+  onPlacementUpdate,
 }: DocumentViewerProps) {
-  const [editPlacements, setEditPlacements] = useState<SignaturePlacement[]>([]);
+  const [editPlacements, setEditPlacements] = useState<SignaturePlacement[]>(externalPlacements || []);
   const [signDialogOpen, setSignDialogOpen] = useState(false);
   const [qrDialogOpen, setQrDialogOpen] = useState(false);
   const [signatureDataUrl, setSignatureDataUrl] = useState<string | null>(null);
   const [isDownloading, setIsDownloading] = useState(false);
   const [qrToken, setQrToken] = useState<string | null>(null);
   const qrTokenRef = useRef<string | null>(null);
-  // Track position overrides for signed overlays (so they can be dragged)
-  const [positionOverrides, setPositionOverrides] = useState<Record<string, { x: number; y: number }>>({});
 
   const currentStep = steps.find((s) => s.id === currentUserStepId);
   const currentStepIndex = currentStep?.order_index;
 
   const resolvedUrl = useMemo(() => resolveDocumentUrl(documentUrl), [documentUrl]);
 
-  const displayPlacements = externalPlacements || editPlacements;
+  useEffect(() => {
+    if (externalPlacements) {
+      setEditPlacements(externalPlacements);
+    }
+  }, [externalPlacements]);
+
+  const displayPlacements = editPlacements;
 
   const signedOverlays = useMemo(() => {
-    if (!externalPlacements) return [];
     return steps
       .filter((s) => s.status === 'APPROVED' && s.signature_path)
       .map((s) => {
-        const placement = externalPlacements.find((p) => p.stepIndex === s.order_index);
+        const placement = displayPlacements.find(
+          (p) => p.approvalStepId === s.id || p.stepIndex === s.order_index
+        );
         if (!placement) return null;
-        const override = positionOverrides[placement.id];
-        const finalPlacement = override ? { ...placement, x: override.x, y: override.y } : placement;
-        return { placement: finalPlacement, signatureDataUrl: s.signature_path!, approverName: s.approver_name };
+        return { placement, signatureDataUrl: s.signature_path!, approverName: s.approver_name };
       })
       .filter(Boolean) as { placement: SignaturePlacement; signatureDataUrl: string; approverName: string }[];
-  }, [steps, externalPlacements, positionOverrides]);
+  }, [steps, displayPlacements]);
 
   const allApproved = steps.length > 0 && steps.every((s) => s.status === 'APPROVED');
 
@@ -92,35 +99,52 @@ export function DocumentViewer({
   }, []);
 
   const handleResizePlacement = useCallback((id: string, width: number, height: number) => {
-    setEditPlacements((prev) => prev.map((p) => p.id === id ? { ...p, width, height } : p));
-  }, []);
+    setEditPlacements((prev) => {
+      const next = prev.map((p) => p.id === id ? { ...p, width, height } : p);
+      const updated = next.find((p) => p.id === id);
+      if (updated) {
+        onPlacementUpdate?.(id, {
+          x: updated.x,
+          y: updated.y,
+          width: updated.width,
+          height: updated.height,
+        });
+      }
+      return next;
+    });
+  }, [onPlacementUpdate]);
 
   const handleMovePlacement = useCallback((id: string, x: number, y: number) => {
-    // Update edit placements if it's an edit placement
     setEditPlacements((prev) => {
-      const found = prev.find((p) => p.id === id);
-      if (found) return prev.map((p) => p.id === id ? { ...p, x, y } : p);
-      return prev;
+      const next = prev.map((p) => p.id === id ? { ...p, x, y } : p);
+      const updated = next.find((p) => p.id === id);
+      if (updated) {
+        onPlacementUpdate?.(id, {
+          x: updated.x,
+          y: updated.y,
+          width: updated.width,
+          height: updated.height,
+        });
+      }
+      return next;
     });
-    // Also update position overrides for signed overlays
-    setPositionOverrides((prev) => ({ ...prev, [id]: { x, y } }));
-  }, []);
+  }, [onPlacementUpdate]);
 
   const handleSignDocument = () => {
     if (!signatureDataUrl) {
       toast.error('Please draw your signature first');
       return;
     }
-    onSign?.(signatureDataUrl, editPlacements);
+    onSign?.(signatureDataUrl, displayPlacements);
     setSignDialogOpen(false);
     toast.success('Document signed successfully!');
   };
 
   const handleDownloadSigned = async () => {
-    if (!resolvedUrl || !externalPlacements) return;
+    if (!resolvedUrl || displayPlacements.length === 0) return;
     setIsDownloading(true);
     try {
-      const pdfBytes = await generateSignedPdf(resolvedUrl, externalPlacements, steps);
+      const pdfBytes = await generateSignedPdf(resolvedUrl, displayPlacements, steps);
       const blob = new Blob([new Uint8Array(pdfBytes as any)], { type: 'application/pdf' });
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
@@ -188,7 +212,7 @@ export function DocumentViewer({
               <FileText className="h-4 w-4" />Document Preview
             </CardTitle>
             <div className="flex items-center gap-2">
-              {allApproved && externalPlacements && externalPlacements.length > 0 && (
+              {allApproved && displayPlacements.length > 0 && (
                 <Button size="sm" variant="outline" onClick={handleDownloadSigned} disabled={isDownloading}>
                   <Download className="h-4 w-4 mr-1" />
                   {isDownloading ? 'Generating...' : 'Download Signed PDF'}
@@ -215,11 +239,12 @@ export function DocumentViewer({
               signedOverlays={signedOverlays}
               onPlacementAdd={isEditing ? handleAddPlacement : undefined}
               onPlacementRemove={isEditing ? handleRemovePlacement : undefined}
-              onPlacementResize={isEditing ? handleResizePlacement : undefined}
-              onPlacementMove={handleMovePlacement}
+              onPlacementResize={isEditing || allowPlacementAdjustments ? handleResizePlacement : undefined}
+              onPlacementMove={isEditing || allowPlacementAdjustments ? handleMovePlacement : undefined}
               isEditing={isEditing}
               currentStepIndex={currentStepIndex}
               readOnly={!isEditing}
+              allowExistingPlacementAdjustments={allowPlacementAdjustments}
             />
           </div>
         </CardContent>

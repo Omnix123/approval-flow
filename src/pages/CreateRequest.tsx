@@ -82,7 +82,7 @@ export default function CreateRequest() {
       stepIndex: activeApproverIndex,
       label: approver ? approver.name : `Approver ${activeApproverIndex + 1}`,
     };
-    setSignaturePlacements((prev) => [...prev, newPlacement]);
+    setSignaturePlacements((prev) => [...prev.filter((p) => p.stepIndex !== activeApproverIndex), newPlacement]);
     toast.success(`Signature field placed for ${newPlacement.label}`);
   }, [activeApproverIndex, selectedApprovers, availableApprovers]);
 
@@ -123,7 +123,7 @@ export default function CreateRequest() {
     if (selectedApprovers.length === 0) { toast.error('Please select at least one approver'); return; }
 
     createRequest.mutate(
-      { title, vendorName, approverIds: selectedApprovers, files: uploadedFiles, documentType },
+      { title, vendorName, approverIds: selectedApprovers, files: uploadedFiles, documentType, placements: signaturePlacements, placementFileName: pdfFile?.name },
       {
         onSuccess: () => {
           toast.success('Request created successfully!');

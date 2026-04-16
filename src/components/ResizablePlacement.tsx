@@ -9,6 +9,8 @@ interface ResizablePlacementProps {
   isCurrentStep: boolean;
   isSigned: boolean;
   signedOverlay?: { signatureDataUrl: string; approverName: string };
+  canResize?: boolean;
+  canMove?: boolean;
   onRemove?: (id: string) => void;
   onResize?: (id: string, width: number, height: number) => void;
   onMove?: (id: string, x: number, y: number) => void;
@@ -21,6 +23,8 @@ export function ResizablePlacement({
   isCurrentStep,
   isSigned,
   signedOverlay,
+  canResize = false,
+  canMove = false,
   onRemove,
   onResize,
   onMove,
@@ -54,8 +58,8 @@ export function ResizablePlacement({
       const rect = container.getBoundingClientRect();
       const dx = ((clientX - startPos.current.x) / rect.width) * 100;
       const dy = ((clientY - startPos.current.y) / rect.height) * 100;
-      const newW = Math.max(1, Math.min(100, startPos.current.w + dx));
-      const newH = Math.max(1, Math.min(100, startPos.current.h + dy));
+      const newW = Math.max(0.1, Math.min(100, startPos.current.w + dx));
+      const newH = Math.max(0.1, Math.min(100, startPos.current.h + dy));
       onResize?.(placement.id, newW, newH);
     };
     const handleUp = () => setResizing(false);
@@ -134,7 +138,7 @@ export function ResizablePlacement({
           </span>
         </div>
         {/* Drag handle for signed signatures */}
-        {onMove && (
+        {canMove && onMove && (
           <div
             className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 p-0.5 bg-primary text-primary-foreground rounded shadow-md cursor-grab active:cursor-grabbing z-10 opacity-0 group-hover:opacity-100 transition-opacity"
             onMouseDown={handleDragStart}
@@ -143,6 +147,15 @@ export function ResizablePlacement({
           >
             <GripVertical className="h-3 w-3" />
           </div>
+        )}
+
+        {canResize && onResize && (
+          <div
+            className="absolute bottom-0 right-0 w-3 h-3 bg-primary rounded-tl cursor-se-resize z-10 opacity-0 group-hover:opacity-100 transition-opacity"
+            onMouseDown={handleResizeStart}
+            onTouchStart={handleResizeStart}
+            title="Resize signature"
+          />
         )}
       </div>
     );
@@ -169,7 +182,7 @@ export function ResizablePlacement({
       </div>
 
       {/* Drag handle - center top */}
-      {isEditing && onMove && (
+      {(isEditing || canMove) && onMove && (
         <div
           className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 p-0.5 bg-primary text-primary-foreground rounded shadow-md cursor-grab active:cursor-grabbing z-10 opacity-0 group-hover:opacity-100 transition-opacity"
           onMouseDown={handleDragStart}
@@ -189,7 +202,7 @@ export function ResizablePlacement({
         </button>
       )}
 
-      {isEditing && onResize && (
+      {(isEditing || canResize) && onResize && (
         <div
           className="absolute bottom-0 right-0 w-3 h-3 bg-primary rounded-tl cursor-se-resize z-10"
           onMouseDown={handleResizeStart}

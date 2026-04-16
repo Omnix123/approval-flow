@@ -119,6 +119,18 @@ export interface RequestDetail {
   files: RequestFile[];
   steps: ApprovalStep[];
   comments?: Comment[];
+  placements?: Array<{
+    id: string;
+    pageNumber: number;
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    label?: string;
+    stepIndex?: number;
+    approvalStepId?: string;
+    requestFileId?: string;
+  }>;
 }
 
 /** Utility type aliases for status values */

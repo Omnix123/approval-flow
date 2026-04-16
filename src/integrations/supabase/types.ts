@@ -345,6 +345,48 @@ export type Database = {
           },
         ]
       }
+      request_signature_placements: {
+        Row: {
+          approval_step_id: string
+          created_at: string
+          height: number
+          id: string
+          page_number: number
+          request_file_id: string
+          request_id: string
+          updated_at: string
+          width: number
+          x: number
+          y: number
+        }
+        Insert: {
+          approval_step_id: string
+          created_at?: string
+          height: number
+          id?: string
+          page_number?: number
+          request_file_id: string
+          request_id: string
+          updated_at?: string
+          width: number
+          x: number
+          y: number
+        }
+        Update: {
+          approval_step_id?: string
+          created_at?: string
+          height?: number
+          id?: string
+          page_number?: number
+          request_file_id?: string
+          request_id?: string
+          updated_at?: string
+          width?: number
+          x?: number
+          y?: number
+        }
+        Relationships: []
+      }
       user_roles: {
         Row: {
           id: string

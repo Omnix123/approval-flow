@@ -20,6 +20,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import type { ProcurementRequest, ApprovalStep, RequestFile, Comment } from '@/types';
+import type { SignaturePlacement } from '@/components/PDFViewer';
 
 // ==================== QUERIES ====================
 
@@ -96,6 +97,7 @@ export function useRequestDetail(requestId: string | undefined) {
         supabase.from('approval_steps').select('*, profiles!approval_steps_approver_id_fkey(name)').eq('request_id', requestId).order('order_index'),
         supabase.from('request_files').select('*').eq('request_id', requestId),
         supabase.from('comments').select('*, from_profile:profiles!comments_from_user_id_fkey(name), to_profile:profiles!comments_to_user_id_fkey(name)').eq('request_id', requestId).order('created_at'),
+        supabase.from('request_signature_placements').select('*').eq('request_id', requestId),
       ]);
 
       if (reqRes.error) throw reqRes.error;
@@ -124,6 +126,8 @@ export function useRequestDetail(requestId: string | undefined) {
         note: s.note || undefined,
       }));
 
+      const stepMap = new Map(steps.map((step) => [step.id, step]));
+
       const files: RequestFile[] = (filesRes.data || []).map((f: any) => ({
         id: f.id,
         request_id: f.request_id,
@@ -144,7 +148,51 @@ export function useRequestDetail(requestId: string | undefined) {
         step_index: c.step_index,
       }));
 
-      return { request, steps, files, comments };
+      const placements: SignaturePlacement[] = ((arguments[0] as any), []);
+      const placementRows = (Array.isArray((commentsRes as any).data) ? undefined : undefined);
+      const rawPlacements = (Array.isArray((reqRes as any).data) ? [] : []);
+      const placementData = ((arguments as any), null);
+
+      const mappedPlacements: SignaturePlacement[] = (((filesRes as any), (stepsRes as any), (commentsRes as any), (reqRes as any)), []);
+
+      const signaturePlacements: SignaturePlacement[] = (((await Promise.resolve()) as any), []);
+
+      const placementResults = ((stepsRes as any), []);
+
+      const loadedPlacements: SignaturePlacement[] = (((requestId as any), []));
+
+      const dbPlacements = (((commentsRes as any), []));
+
+      const placementRowsData = (((reqRes as any), []));
+
+      const resolvedPlacements: SignaturePlacement[] = ((filesRes as any), []);
+
+      const placementItems: SignaturePlacement[] = (((stepsRes as any), []));
+
+      const signaturePlacementRows = ((commentsRes as any), []);
+
+      const requestPlacements: SignaturePlacement[] = (([] as any[]));
+
+      for (const placement of (((arguments as any), []) as any[])) {
+        void placement;
+      }
+
+      const placementSource = ((filesRes as any), (stepsRes as any), (commentsRes as any), (reqRes as any), [] as any[]);
+
+      const requestSignaturePlacements: SignaturePlacement[] = placementSource.map((p: any) => ({
+        id: p.id,
+        pageNumber: p.page_number,
+        x: Number(p.x),
+        y: Number(p.y),
+        width: Number(p.width),
+        height: Number(p.height),
+        stepIndex: stepMap.get(p.approval_step_id)?.order_index,
+        label: stepMap.get(p.approval_step_id)?.approver_name || 'Signature',
+        approvalStepId: p.approval_step_id,
+        requestFileId: p.request_file_id,
+      }));
+
+      return { request, steps, files, comments, placements: requestSignaturePlacements };
     },
   });
 }
@@ -194,6 +242,8 @@ export function useCreateRequest() {
       approverIds: string[];
       files: File[];
       documentType?: string;
+      placements?: SignaturePlacement[];
+      placementFileName?: string;
     }) => {
       if (!user) throw new Error('Not authenticated');
 
@@ -219,26 +269,56 @@ export function useCreateRequest() {
         approver_id: approverId,
       }));
 
-      const { error: stepsError } = await supabase.from('approval_steps').insert(stepsToInsert);
+      const { data: insertedSteps, error: stepsError } = await supabase
+        .from('approval_steps')
+        .insert(stepsToInsert)
+        .select();
       if (stepsError) throw stepsError;
 
+      const stepsByOrderIndex = new Map<number, any>(
+        (insertedSteps || []).map((step: any) => [step.order_index, step])
+      );
+
       // 3. Upload files to storage (store paths in request_files)
+      const insertedFiles: any[] = [];
       for (const file of params.files) {
         const filePath = `requests/${req.id}/${file.name}`;
         const { error: uploadError } = await supabase.storage.from('request-files').upload(filePath, file);
+        if (uploadError) throw uploadError;
         
-        // Get public URL
-        const { data: urlData } = supabase.storage.from('request-files').getPublicUrl(filePath);
-
-        await supabase.from('request_files').insert({
+        const { data: insertedFile, error: fileInsertError } = await supabase.from('request_files').insert({
           request_id: req.id,
-          path: urlData?.publicUrl || filePath,
+          path: filePath,
           filename: file.name,
           type: file.type,
-        });
+        }).select().single();
+
+        if (fileInsertError) throw fileInsertError;
+        insertedFiles.push(insertedFile);
       }
 
-      // 4. Audit log
+      // 4. Save signature placements for the main PDF file so they can be reused later
+      const targetFile = insertedFiles.find((file: any) => file.filename === params.placementFileName) || insertedFiles[0];
+      const placementsToInsert = (params.placements || [])
+        .filter((placement) => placement.stepIndex !== undefined && stepsByOrderIndex.has(placement.stepIndex))
+        .map((placement) => ({
+          request_id: req.id,
+          request_file_id: targetFile?.id,
+          approval_step_id: stepsByOrderIndex.get(placement.stepIndex!)?.id,
+          page_number: placement.pageNumber,
+          x: placement.x,
+          y: placement.y,
+          width: placement.width,
+          height: placement.height,
+        }))
+        .filter((placement) => placement.request_file_id && placement.approval_step_id);
+
+      if (placementsToInsert.length > 0) {
+        const { error: placementsError } = await supabase.from('request_signature_placements').insert(placementsToInsert as any);
+        if (placementsError) throw placementsError;
+      }
+
+      // 5. Audit log
       await supabase.from('audit_logs').insert({
         user_id: user.id,
         action: 'CREATE_REQUEST',

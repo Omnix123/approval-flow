@@ -21,7 +21,9 @@ export async function generateSignedPdf(
   for (const step of steps) {
     if (step.status !== 'APPROVED' || !step.signature_path) continue;
 
-    const placement = placements.find((p) => p.stepIndex === step.order_index);
+    const placement = placements.find(
+      (p) => p.approvalStepId === step.id || p.stepIndex === step.order_index
+    );
     if (!placement) continue;
 
     // Get the page
@@ -46,10 +48,10 @@ export async function generateSignedPdf(
 
     // Convert percentage-based placement to PDF coordinates
     // PDF origin is bottom-left, but our placements use top-left origin
-    const x = (placement.x / 100) * pageWidth;
-    const w = (placement.width / 100) * pageWidth;
-    const h = (placement.height / 100) * pageHeight;
-    const y = pageHeight - ((placement.y / 100) * pageHeight) - h;
+    const x = (Number(placement.x) / 100) * pageWidth;
+    const w = (Number(placement.width) / 100) * pageWidth;
+    const h = (Number(placement.height) / 100) * pageHeight;
+    const y = pageHeight - ((Number(placement.y) / 100) * pageHeight) - h;
 
     page.drawImage(sigImage, { x, y, width: w, height: h });
   }

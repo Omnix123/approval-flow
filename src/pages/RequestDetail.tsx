@@ -33,6 +33,7 @@ import { DocumentViewer } from '@/components/DocumentViewer';
 import { SignatureCanvas } from '@/components/SignatureCanvas';
 import { useRequestDetail, useSignStep, useReturnStep } from '@/hooks/useSupabaseData';
 import { supabase } from '@/integrations/supabase/client';
+import type { SignaturePlacement } from '@/components/PDFViewer';
 import {
   ArrowLeft, FileText, Building2, Calendar, User, Pen, RotateCcw,
   MessageSquare, CheckCircle, AlertCircle, Eye,
@@ -68,30 +69,38 @@ export default function RequestDetail() {
   const steps = data?.steps || [];
   const files = data?.files || [];
   const comments = data?.comments || [];
+  const placements = data?.placements || [];
+  const selectedFile = files[selectedFileIndex];
+  const selectedFilePlacements = useMemo(
+    () => placements.filter((placement) => placement.requestFileId === selectedFile?.id),
+    [placements, selectedFile?.id]
+  );
+  const canAdjustPlacements = !!user && (request?.requester_id === user.id || user.role === 'admin');
 
   // Fetch the selected file as a blob via Supabase storage download to avoid CORS
   useEffect(() => {
-    const filePath = files[selectedFileIndex]?.path;
+    const filePath = selectedFile?.path;
     if (!filePath) { setBlobUrl(null); return; }
     let cancelled = false;
     let url: string | null = null;
 
     (async () => {
       try {
-        // Extract the storage path from the full URL
+        if (/^https?:\/\//i.test(filePath)) {
+          const response = await fetch(filePath);
+          if (response.ok) {
+            if (cancelled) return;
+            const blob = await response.blob();
+            if (cancelled) return;
+            url = URL.createObjectURL(blob);
+            setBlobUrl(url);
+            return;
+          }
+        }
+
         const marker = '/object/public/request-files/';
         const idx = filePath.indexOf(marker);
-        if (idx === -1) {
-          // Fallback: try direct fetch
-          const response = await fetch(filePath);
-          if (cancelled) return;
-          const blob = await response.blob();
-          if (cancelled) return;
-          url = URL.createObjectURL(blob);
-          setBlobUrl(url);
-          return;
-        }
-        const storagePath = decodeURIComponent(filePath.substring(idx + marker.length));
+        const storagePath = idx === -1 ? filePath : decodeURIComponent(filePath.substring(idx + marker.length));
         const { data, error } = await supabase.storage.from('request-files').download(storagePath);
         if (cancelled) return;
         if (error || !data) { setBlobUrl(null); return; }
@@ -106,7 +115,26 @@ export default function RequestDetail() {
       cancelled = true;
       if (url) URL.revokeObjectURL(url);
     };
-  }, [files, selectedFileIndex]);
+  }, [selectedFile]);
+
+  const handlePlacementUpdate = useCallback(async (
+    placementId: string,
+    updates: Pick<SignaturePlacement, 'x' | 'y' | 'width' | 'height'>
+  ) => {
+    const { error } = await supabase
+      .from('request_signature_placements')
+      .update({
+        x: updates.x,
+        y: updates.y,
+        width: updates.width,
+        height: updates.height,
+      } as any)
+      .eq('id', placementId);
+
+    if (error) {
+      toast.error('Failed to save signature box position');
+    }
+  }, []);
 
   /**
    * REAL-TIME SUBSCRIPTION
@@ -384,8 +412,10 @@ export default function RequestDetail() {
                   );
                 }}
                 isEditing={false}
-                placements={[]}
+                placements={selectedFilePlacements}
                 requestId={id}
+                allowPlacementAdjustments={canAdjustPlacements}
+                onPlacementUpdate={handlePlacementUpdate}
               />
             </div>
             <div className="space-y-6">

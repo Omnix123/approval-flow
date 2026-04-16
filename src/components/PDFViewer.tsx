@@ -61,6 +61,8 @@ export interface SignaturePlacement {
   height: number;
   label?: string;
   stepIndex?: number;
+  approvalStepId?: string;
+  requestFileId?: string;
 }
 
 export interface SignedOverlay {
@@ -80,6 +82,7 @@ interface PDFViewerProps {
   isEditing?: boolean;
   currentStepIndex?: number;
   readOnly?: boolean;
+  allowExistingPlacementAdjustments?: boolean;
 }
 
 export function PDFViewer({
@@ -93,6 +96,7 @@ export function PDFViewer({
   isEditing = false,
   currentStepIndex,
   readOnly = false,
+  allowExistingPlacementAdjustments = false,
 }: PDFViewerProps) {
   const [numPages, setNumPages] = useState<number>(0);
   const [pageNumber, setPageNumber] = useState(1);
@@ -145,6 +149,7 @@ export function PDFViewer({
 
   const currentPagePlacements = placements.filter((p) => p.pageNumber === pageNumber);
   const currentPageSignedOverlays = signedOverlays.filter((o) => o.placement.pageNumber === pageNumber);
+  const canAdjustExistingPlacements = allowExistingPlacementAdjustments || (isEditing && !readOnly);
 
   return (
     <div className="flex flex-col h-full bg-muted/30 rounded-lg overflow-hidden">
@@ -240,9 +245,11 @@ export function PDFViewer({
                   isCurrentStep={placement.stepIndex === currentStepIndex}
                   isSigned={isSigned}
                   signedOverlay={signedOverlay}
+                  canResize={canAdjustExistingPlacements}
+                  canMove={canAdjustExistingPlacements}
                   onRemove={onPlacementRemove}
-                  onResize={onPlacementResize}
-                  onMove={onPlacementMove}
+                  onResize={canAdjustExistingPlacements ? onPlacementResize : undefined}
+                  onMove={canAdjustExistingPlacements ? onPlacementMove : undefined}
                   containerRef={pageRef as React.RefObject<HTMLDivElement>}
                 />
               );
@@ -259,7 +266,10 @@ export function PDFViewer({
                   isCurrentStep={false}
                   isSigned={true}
                   signedOverlay={overlay}
-                  onMove={onPlacementMove}
+                  canResize={canAdjustExistingPlacements}
+                  canMove={canAdjustExistingPlacements}
+                  onResize={canAdjustExistingPlacements ? onPlacementResize : undefined}
+                  onMove={canAdjustExistingPlacements ? onPlacementMove : undefined}
                   containerRef={pageRef as React.RefObject<HTMLDivElement>}
                 />
               ))

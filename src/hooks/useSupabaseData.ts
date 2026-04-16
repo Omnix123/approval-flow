@@ -92,7 +92,7 @@ export function useRequestDetail(requestId: string | undefined) {
     queryFn: async () => {
       if (!requestId) throw new Error('No request ID');
 
-      const [reqRes, stepsRes, filesRes, commentsRes] = await Promise.all([
+      const [reqRes, stepsRes, filesRes, commentsRes, placementsRes] = await Promise.all([
         supabase.from('procurement_requests').select('*, profiles!procurement_requests_requester_id_fkey(name)').eq('id', requestId).single(),
         supabase.from('approval_steps').select('*, profiles!approval_steps_approver_id_fkey(name)').eq('request_id', requestId).order('order_index'),
         supabase.from('request_files').select('*').eq('request_id', requestId),
@@ -101,6 +101,10 @@ export function useRequestDetail(requestId: string | undefined) {
       ]);
 
       if (reqRes.error) throw reqRes.error;
+      if (stepsRes.error) throw stepsRes.error;
+      if (filesRes.error) throw filesRes.error;
+      if (commentsRes.error) throw commentsRes.error;
+      if (placementsRes.error) throw placementsRes.error;
 
       const request: ProcurementRequest = {
         id: reqRes.data.id,
@@ -148,38 +152,7 @@ export function useRequestDetail(requestId: string | undefined) {
         step_index: c.step_index,
       }));
 
-      const placements: SignaturePlacement[] = ((arguments[0] as any), []);
-      const placementRows = (Array.isArray((commentsRes as any).data) ? undefined : undefined);
-      const rawPlacements = (Array.isArray((reqRes as any).data) ? [] : []);
-      const placementData = ((arguments as any), null);
-
-      const mappedPlacements: SignaturePlacement[] = (((filesRes as any), (stepsRes as any), (commentsRes as any), (reqRes as any)), []);
-
-      const signaturePlacements: SignaturePlacement[] = (((await Promise.resolve()) as any), []);
-
-      const placementResults = ((stepsRes as any), []);
-
-      const loadedPlacements: SignaturePlacement[] = (((requestId as any), []));
-
-      const dbPlacements = (((commentsRes as any), []));
-
-      const placementRowsData = (((reqRes as any), []));
-
-      const resolvedPlacements: SignaturePlacement[] = ((filesRes as any), []);
-
-      const placementItems: SignaturePlacement[] = (((stepsRes as any), []));
-
-      const signaturePlacementRows = ((commentsRes as any), []);
-
-      const requestPlacements: SignaturePlacement[] = (([] as any[]));
-
-      for (const placement of (((arguments as any), []) as any[])) {
-        void placement;
-      }
-
-      const placementSource = ((filesRes as any), (stepsRes as any), (commentsRes as any), (reqRes as any), [] as any[]);
-
-      const requestSignaturePlacements: SignaturePlacement[] = placementSource.map((p: any) => ({
+      const requestSignaturePlacements: SignaturePlacement[] = (placementsRes.data || []).map((p: any) => ({
         id: p.id,
         pageNumber: p.page_number,
         x: Number(p.x),

@@ -99,26 +99,36 @@ export function DocumentViewer({
   }, []);
 
   const handleResizePlacement = useCallback((id: string, width: number, height: number) => {
-    setEditPlacements((prev) => prev.map((p) => p.id === id ? { ...p, width, height } : p));
-    const placement = editPlacements.find((p) => p.id === id);
-    onPlacementUpdate?.(id, {
-      x: placement?.x ?? 0,
-      y: placement?.y ?? 0,
-      width,
-      height,
+    setEditPlacements((prev) => {
+      const next = prev.map((p) => p.id === id ? { ...p, width, height } : p);
+      const updated = next.find((p) => p.id === id);
+      if (updated) {
+        onPlacementUpdate?.(id, {
+          x: updated.x,
+          y: updated.y,
+          width: updated.width,
+          height: updated.height,
+        });
+      }
+      return next;
     });
-  }, [editPlacements, onPlacementUpdate]);
+  }, [onPlacementUpdate]);
 
   const handleMovePlacement = useCallback((id: string, x: number, y: number) => {
-    const placement = editPlacements.find((p) => p.id === id);
-    setEditPlacements((prev) => prev.map((p) => p.id === id ? { ...p, x, y } : p));
-    onPlacementUpdate?.(id, {
-      x,
-      y,
-      width: placement?.width ?? 0,
-      height: placement?.height ?? 0,
+    setEditPlacements((prev) => {
+      const next = prev.map((p) => p.id === id ? { ...p, x, y } : p);
+      const updated = next.find((p) => p.id === id);
+      if (updated) {
+        onPlacementUpdate?.(id, {
+          x: updated.x,
+          y: updated.y,
+          width: updated.width,
+          height: updated.height,
+        });
+      }
+      return next;
     });
-  }, [editPlacements, onPlacementUpdate]);
+  }, [onPlacementUpdate]);
 
   const handleSignDocument = () => {
     if (!signatureDataUrl) {
@@ -131,10 +141,10 @@ export function DocumentViewer({
   };
 
   const handleDownloadSigned = async () => {
-      if (!resolvedUrl || displayPlacements.length === 0) return;
+    if (!resolvedUrl || displayPlacements.length === 0) return;
     setIsDownloading(true);
     try {
-        const pdfBytes = await generateSignedPdf(resolvedUrl, displayPlacements, steps);
+      const pdfBytes = await generateSignedPdf(resolvedUrl, displayPlacements, steps);
       const blob = new Blob([new Uint8Array(pdfBytes as any)], { type: 'application/pdf' });
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
@@ -229,8 +239,8 @@ export function DocumentViewer({
               signedOverlays={signedOverlays}
               onPlacementAdd={isEditing ? handleAddPlacement : undefined}
               onPlacementRemove={isEditing ? handleRemovePlacement : undefined}
-              onPlacementResize={isEditing ? handleResizePlacement : undefined}
-              onPlacementMove={handleMovePlacement}
+              onPlacementResize={isEditing || allowPlacementAdjustments ? handleResizePlacement : undefined}
+              onPlacementMove={isEditing || allowPlacementAdjustments ? handleMovePlacement : undefined}
               isEditing={isEditing}
               currentStepIndex={currentStepIndex}
               readOnly={!isEditing}

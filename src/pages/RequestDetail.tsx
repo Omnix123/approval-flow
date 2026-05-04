@@ -101,7 +101,12 @@ export default function RequestDetail() {
 
     if (!response.ok) throw new Error('Unable to load file');
 
-    return response.blob();
+    const payload = await response.json();
+    if (!payload?.base64) throw new Error('Unable to load file');
+
+    const bytes = Uint8Array.from(atob(payload.base64), (char) => char.charCodeAt(0));
+
+    return new Blob([bytes], { type: payload.type || 'application/pdf' });
   };
 
   // Fetch the selected PDF as a blob via Storage download and pass only the blob URL to the viewer.

@@ -78,6 +78,37 @@ export default function RequestDetail() {
   );
   const canAdjustPlacements = !!user && (request?.requester_id === user.id || user.role === 'admin');
 
+  const createInlinePdfUrl = (blob: Blob) => {
+    const pdfBlob = blob.type === 'application/pdf' ? blob : blob.slice(0, blob.size, 'application/pdf');
+    return URL.createObjectURL(pdfBlob);
+  };
+
+  const fetchInlineRequestFile = async (fileId: string) => {
+    const { data: sessionData } = await supabase.auth.getSession();
+    const accessToken = sessionData.session?.access_token;
+
+    if (!accessToken) throw new Error('Not authenticated');
+
+    const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/inline-request-file`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ fileId }),
+    });
+
+    if (!response.ok) throw new Error('Unable to load file');
+
+    const payload = await response.json();
+    if (!payload?.base64) throw new Error('Unable to load file');
+
+    const bytes = Uint8Array.from(atob(payload.base64), (char) => char.charCodeAt(0));
+
+    return new Blob([bytes], { type: payload.type || 'application/pdf' });
+  };
+
   // Fetch the selected PDF as a blob via Storage download and pass only the blob URL to the viewer.
   // This keeps viewing fully inline and avoids browser navigation to URLs that may use
   // Content-Disposition: attachment, which caused requests to open as downloads.
@@ -89,30 +120,9 @@ export default function RequestDetail() {
 
     (async () => {
       try {
-        const createInlinePdfUrl = (blob: Blob) => {
-          const pdfBlob = blob.type === 'application/pdf' ? blob : blob.slice(0, blob.size, 'application/pdf');
-          return URL.createObjectURL(pdfBlob);
-        };
-
-        if (/^https?:\/\//i.test(filePath)) {
-          const response = await fetch(filePath);
-          if (response.ok) {
-            if (cancelled) return;
-            const blob = await response.blob();
-            if (cancelled) return;
-            url = createInlinePdfUrl(blob);
-            setBlobUrl(url);
-            return;
-          }
-        }
-
-        const marker = '/object/public/request-files/';
-        const idx = filePath.indexOf(marker);
-        const storagePath = idx === -1 ? filePath : decodeURIComponent(filePath.substring(idx + marker.length));
-        const { data, error } = await supabase.storage.from('request-files').download(storagePath);
+        const blob = await fetchInlineRequestFile(selectedFile.id);
         if (cancelled) return;
-        if (error || !data) { setBlobUrl(null); return; }
-        url = createInlinePdfUrl(data);
+        url = createInlinePdfUrl(blob);
         setBlobUrl(url);
       } catch {
         if (!cancelled) setBlobUrl(null);
@@ -123,7 +133,7 @@ export default function RequestDetail() {
       cancelled = true;
       if (url) URL.revokeObjectURL(url);
     };
-  }, [selectedFile?.path, isSelectedFilePdf]);
+  }, [selectedFile?.id, selectedFile?.path, isSelectedFilePdf]);
 
   const handlePlacementUpdate = useCallback(async (
     placementId: string,

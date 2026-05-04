@@ -408,23 +408,31 @@ export default function RequestDetail() {
                 </div>
               )}
               {/* PDF viewer component with signature capabilities */}
-              <DocumentViewer
-                documentUrl={blobUrl || ''}
-                steps={steps}
-                currentUserStepId={currentUserStep?.id}
-                onSign={(sigData) => {
-                  if (!id || !currentUserStep) return;
-                  signStepMutation.mutate(
-                    { requestId: id, stepId: currentUserStep.id, signatureDataUrl: sigData },
-                    { onSuccess: () => toast.success('Document signed successfully!') }
-                  );
-                }}
-                isEditing={false}
-                placements={selectedFilePlacements}
-                requestId={id}
-                allowPlacementAdjustments={canAdjustPlacements}
-                onPlacementUpdate={handlePlacementUpdate}
-              />
+              {isSelectedFilePdf ? (
+                <DocumentViewer
+                  documentUrl={blobUrl || ''}
+                  steps={steps}
+                  currentUserStepId={currentUserStep?.id}
+                  onSign={(sigData) => {
+                    if (!id || !currentUserStep) return;
+                    signStepMutation.mutate(
+                      { requestId: id, stepId: currentUserStep.id, signatureDataUrl: sigData },
+                      { onSuccess: () => toast.success('Document signed successfully!') }
+                    );
+                  }}
+                  isEditing={false}
+                  placements={selectedFilePlacements}
+                  requestId={id}
+                  allowPlacementAdjustments={canAdjustPlacements}
+                  onPlacementUpdate={handlePlacementUpdate}
+                />
+              ) : (
+                <Card>
+                  <CardContent className="py-10 text-center text-sm text-muted-foreground">
+                    Inline preview is available for PDF documents. This file will not be opened automatically.
+                  </CardContent>
+                </Card>
+              )}
             </div>
             <div className="space-y-6">
               <Card>

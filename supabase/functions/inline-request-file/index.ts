@@ -19,6 +19,18 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+const toBase64 = async (blob: Blob) => {
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  let binary = "";
+
+  // Convert in chunks so larger PDFs do not overflow the JavaScript call stack.
+  for (let i = 0; i < bytes.length; i += 0x8000) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  }
+
+  return btoa(binary);
+};
+
 const getStoragePath = (storedPath: string) => {
   if (!/^https?:\/\//i.test(storedPath)) return storedPath;
 
@@ -97,14 +109,20 @@ Deno.serve(async (req) => {
 
     if (downloadError || !fileBlob) throw new Error("Unable to load file");
 
-    return new Response(fileBlob, {
-      headers: {
-        ...corsHeaders,
-        "Content-Type": file.type || fileBlob.type || "application/octet-stream",
-        "Cache-Control": "no-store",
-        "Content-Disposition": `inline; filename="${String(file.filename).replaceAll('"', '')}"`,
+    return new Response(
+      JSON.stringify({
+        filename: file.filename,
+        type: file.type || fileBlob.type || "application/octet-stream",
+        base64: await toBase64(fileBlob),
+      }),
+      {
+        headers: {
+          ...corsHeaders,
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store",
+        },
       },
-    });
+    );
   } catch (err: any) {
     return new Response(
       JSON.stringify({ error: err.message || "Unable to load file" }),

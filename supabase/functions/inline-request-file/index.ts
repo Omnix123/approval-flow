@@ -2,8 +2,8 @@
  * inline-request-file — Backend Function
  *
  * PURPOSE: Safely returns an attached request file for inline browser viewing.
- * The browser calls this function, receives JSON, creates a local Blob, and then
- * renders that Blob URL. This prevents the UI from ever navigating to raw
+ * The browser calls this function with fetch(), receives file bytes, creates a
+ * local Blob, and renders that Blob URL. This prevents the UI from ever navigating to raw
  * storage URLs that may carry download-oriented headers.
  *
  * SECURITY:

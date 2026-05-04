@@ -78,20 +78,6 @@ export default function RequestDetail() {
   );
   const canAdjustPlacements = !!user && (request?.requester_id === user.id || user.role === 'admin');
 
-  const getRequestFileStoragePath = (storedPath: string) => {
-    if (!/^https?:\/\//i.test(storedPath)) return storedPath;
-
-    const url = new URL(storedPath);
-    const segments = url.pathname.split('/').filter(Boolean).map(decodeURIComponent);
-    const bucketIndex = segments.findIndex((segment) => segment === 'request-files');
-
-    if (bucketIndex === -1 || bucketIndex === segments.length - 1) {
-      throw new Error('Invalid request file storage path');
-    }
-
-    return segments.slice(bucketIndex + 1).join('/');
-  };
-
   const createInlinePdfUrl = (blob: Blob) => {
     const pdfBlob = blob.type === 'application/pdf' ? blob : blob.slice(0, blob.size, 'application/pdf');
     return URL.createObjectURL(pdfBlob);
@@ -108,11 +94,16 @@ export default function RequestDetail() {
 
     (async () => {
       try {
-        const storagePath = getRequestFileStoragePath(filePath);
-        const { data, error } = await supabase.storage.from('request-files').download(storagePath);
+        const { data, error } = await supabase.functions.invoke('inline-request-file', {
+          body: { fileId: selectedFile.id },
+        });
+
         if (cancelled) return;
-        if (error || !data) { setBlobUrl(null); return; }
-        url = createInlinePdfUrl(data);
+        if (error || !data?.base64) { setBlobUrl(null); return; }
+
+        const bytes = Uint8Array.from(atob(data.base64), (char) => char.charCodeAt(0));
+        const blob = new Blob([bytes], { type: data.type || 'application/pdf' });
+        url = createInlinePdfUrl(blob);
         setBlobUrl(url);
       } catch {
         if (!cancelled) setBlobUrl(null);
@@ -123,7 +114,7 @@ export default function RequestDetail() {
       cancelled = true;
       if (url) URL.revokeObjectURL(url);
     };
-  }, [selectedFile?.path, isSelectedFilePdf]);
+  }, [selectedFile?.id, selectedFile?.path, isSelectedFilePdf]);
 
   const handlePlacementUpdate = useCallback(async (
     placementId: string,

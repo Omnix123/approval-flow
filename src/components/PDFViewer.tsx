@@ -119,7 +119,9 @@ export function PDFViewer({
   };
 
   useEffect(() => {
-    setIsLoading(true);
+    // Only show the PDF loading spinner when there is an actual URL to load.
+    // Previously an empty URL left the viewer in a permanent loading state.
+    setIsLoading(Boolean(url));
     setLoadError(null);
     setNumPages(0);
     setPageNumber(1);

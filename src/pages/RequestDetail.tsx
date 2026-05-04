@@ -71,28 +71,36 @@ export default function RequestDetail() {
   const comments = data?.comments || [];
   const placements = data?.placements || [];
   const selectedFile = files[selectedFileIndex];
+  const isSelectedFilePdf = selectedFile?.type === 'application/pdf' || selectedFile?.filename?.toLowerCase().endsWith('.pdf');
   const selectedFilePlacements = useMemo(
     () => placements.filter((placement) => placement.requestFileId === selectedFile?.id),
     [placements, selectedFile?.id]
   );
   const canAdjustPlacements = !!user && (request?.requester_id === user.id || user.role === 'admin');
 
-  // Fetch the selected file as a blob via Supabase storage download to avoid CORS
+  // Fetch the selected PDF as a blob via Storage download and pass only the blob URL to the viewer.
+  // This keeps viewing fully inline and avoids browser navigation to URLs that may use
+  // Content-Disposition: attachment, which caused requests to open as downloads.
   useEffect(() => {
     const filePath = selectedFile?.path;
-    if (!filePath) { setBlobUrl(null); return; }
+    if (!filePath || !isSelectedFilePdf) { setBlobUrl(null); return; }
     let cancelled = false;
     let url: string | null = null;
 
     (async () => {
       try {
+        const createInlinePdfUrl = (blob: Blob) => {
+          const pdfBlob = blob.type === 'application/pdf' ? blob : blob.slice(0, blob.size, 'application/pdf');
+          return URL.createObjectURL(pdfBlob);
+        };
+
         if (/^https?:\/\//i.test(filePath)) {
           const response = await fetch(filePath);
           if (response.ok) {
             if (cancelled) return;
             const blob = await response.blob();
             if (cancelled) return;
-            url = URL.createObjectURL(blob);
+            url = createInlinePdfUrl(blob);
             setBlobUrl(url);
             return;
           }
@@ -104,7 +112,7 @@ export default function RequestDetail() {
         const { data, error } = await supabase.storage.from('request-files').download(storagePath);
         if (cancelled) return;
         if (error || !data) { setBlobUrl(null); return; }
-        url = URL.createObjectURL(data);
+        url = createInlinePdfUrl(data);
         setBlobUrl(url);
       } catch {
         if (!cancelled) setBlobUrl(null);
@@ -115,7 +123,7 @@ export default function RequestDetail() {
       cancelled = true;
       if (url) URL.revokeObjectURL(url);
     };
-  }, [selectedFile]);
+  }, [selectedFile?.path, isSelectedFilePdf]);
 
   const handlePlacementUpdate = useCallback(async (
     placementId: string,
@@ -400,23 +408,31 @@ export default function RequestDetail() {
                 </div>
               )}
               {/* PDF viewer component with signature capabilities */}
-              <DocumentViewer
-                documentUrl={blobUrl || ''}
-                steps={steps}
-                currentUserStepId={currentUserStep?.id}
-                onSign={(sigData) => {
-                  if (!id || !currentUserStep) return;
-                  signStepMutation.mutate(
-                    { requestId: id, stepId: currentUserStep.id, signatureDataUrl: sigData },
-                    { onSuccess: () => toast.success('Document signed successfully!') }
-                  );
-                }}
-                isEditing={false}
-                placements={selectedFilePlacements}
-                requestId={id}
-                allowPlacementAdjustments={canAdjustPlacements}
-                onPlacementUpdate={handlePlacementUpdate}
-              />
+              {isSelectedFilePdf ? (
+                <DocumentViewer
+                  documentUrl={blobUrl || ''}
+                  steps={steps}
+                  currentUserStepId={currentUserStep?.id}
+                  onSign={(sigData) => {
+                    if (!id || !currentUserStep) return;
+                    signStepMutation.mutate(
+                      { requestId: id, stepId: currentUserStep.id, signatureDataUrl: sigData },
+                      { onSuccess: () => toast.success('Document signed successfully!') }
+                    );
+                  }}
+                  isEditing={false}
+                  placements={selectedFilePlacements}
+                  requestId={id}
+                  allowPlacementAdjustments={canAdjustPlacements}
+                  onPlacementUpdate={handlePlacementUpdate}
+                />
+              ) : (
+                <Card>
+                  <CardContent className="py-10 text-center text-sm text-muted-foreground">
+                    Inline preview is available for PDF documents. This file will not be opened automatically.
+                  </CardContent>
+                </Card>
+              )}
             </div>
             <div className="space-y-6">
               <Card>

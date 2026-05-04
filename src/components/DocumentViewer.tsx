@@ -27,10 +27,10 @@ interface DocumentViewerProps {
 
 function resolveDocumentUrl(url: string) {
   if (!url) return '';
+  // Documents must only be rendered from browser-created blob URLs.
+  // Raw storage/public/signed URLs can carry download headers and trigger IDM/browser downloads.
   if (url.startsWith('blob:')) return url;
-  if (/^https?:\/\//i.test(url)) return url;
-  const path = url.startsWith('/') ? url : `/${url}`;
-  return `${window.location.origin}${path}`;
+  return '';
 }
 
 export function DocumentViewer({

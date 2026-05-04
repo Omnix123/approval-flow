@@ -78,6 +78,25 @@ export default function RequestDetail() {
   );
   const canAdjustPlacements = !!user && (request?.requester_id === user.id || user.role === 'admin');
 
+  const getRequestFileStoragePath = (storedPath: string) => {
+    if (!/^https?:\/\//i.test(storedPath)) return storedPath;
+
+    const url = new URL(storedPath);
+    const segments = url.pathname.split('/').filter(Boolean).map(decodeURIComponent);
+    const bucketIndex = segments.findIndex((segment) => segment === 'request-files');
+
+    if (bucketIndex === -1 || bucketIndex === segments.length - 1) {
+      throw new Error('Invalid request file storage path');
+    }
+
+    return segments.slice(bucketIndex + 1).join('/');
+  };
+
+  const createInlinePdfUrl = (blob: Blob) => {
+    const pdfBlob = blob.type === 'application/pdf' ? blob : blob.slice(0, blob.size, 'application/pdf');
+    return URL.createObjectURL(pdfBlob);
+  };
+
   // Fetch the selected PDF as a blob via Storage download and pass only the blob URL to the viewer.
   // This keeps viewing fully inline and avoids browser navigation to URLs that may use
   // Content-Disposition: attachment, which caused requests to open as downloads.
@@ -89,26 +108,7 @@ export default function RequestDetail() {
 
     (async () => {
       try {
-        const createInlinePdfUrl = (blob: Blob) => {
-          const pdfBlob = blob.type === 'application/pdf' ? blob : blob.slice(0, blob.size, 'application/pdf');
-          return URL.createObjectURL(pdfBlob);
-        };
-
-        if (/^https?:\/\//i.test(filePath)) {
-          const response = await fetch(filePath);
-          if (response.ok) {
-            if (cancelled) return;
-            const blob = await response.blob();
-            if (cancelled) return;
-            url = createInlinePdfUrl(blob);
-            setBlobUrl(url);
-            return;
-          }
-        }
-
-        const marker = '/object/public/request-files/';
-        const idx = filePath.indexOf(marker);
-        const storagePath = idx === -1 ? filePath : decodeURIComponent(filePath.substring(idx + marker.length));
+        const storagePath = getRequestFileStoragePath(filePath);
         const { data, error } = await supabase.storage.from('request-files').download(storagePath);
         if (cancelled) return;
         if (error || !data) { setBlobUrl(null); return; }

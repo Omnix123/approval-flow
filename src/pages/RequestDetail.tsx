@@ -83,6 +83,27 @@ export default function RequestDetail() {
     return URL.createObjectURL(pdfBlob);
   };
 
+  const fetchInlineRequestFile = async (fileId: string) => {
+    const { data: sessionData } = await supabase.auth.getSession();
+    const accessToken = sessionData.session?.access_token;
+
+    if (!accessToken) throw new Error('Not authenticated');
+
+    const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/inline-request-file`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ fileId }),
+    });
+
+    if (!response.ok) throw new Error('Unable to load file');
+
+    return response.blob();
+  };
+
   // Fetch the selected PDF as a blob via Storage download and pass only the blob URL to the viewer.
   // This keeps viewing fully inline and avoids browser navigation to URLs that may use
   // Content-Disposition: attachment, which caused requests to open as downloads.
@@ -94,15 +115,8 @@ export default function RequestDetail() {
 
     (async () => {
       try {
-        const { data, error } = await supabase.functions.invoke('inline-request-file', {
-          body: { fileId: selectedFile.id },
-        });
-
+        const blob = await fetchInlineRequestFile(selectedFile.id);
         if (cancelled) return;
-        if (error || !data?.base64) { setBlobUrl(null); return; }
-
-        const bytes = Uint8Array.from(atob(data.base64), (char) => char.charCodeAt(0));
-        const blob = new Blob([bytes], { type: data.type || 'application/pdf' });
         url = createInlinePdfUrl(blob);
         setBlobUrl(url);
       } catch {

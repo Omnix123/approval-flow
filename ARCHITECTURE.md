@@ -372,7 +372,11 @@ When an approver signs a document, other users viewing the same request see the 
 
 Once all approvers have signed, the system can generate a PDF with all signatures visually embedded at their designated positions using the `pdf-lib` library.
 
-### 8.4 Admin Dashboard
+### 8.4 Inline Document Viewing
+
+Request documents are never opened through raw storage URLs. `RequestDetail.tsx` calls the `inline-request-file` backend function, converts the returned file bytes into a browser `Blob`, and passes only the resulting `blob:` URL into the PDF viewer. This prevents accidental downloads from storage headers while preserving explicit download buttons for generated signed PDFs.
+
+### 8.5 Admin Dashboard
 
 Admins can:
 - View all registered users with their roles
@@ -399,7 +403,7 @@ Admins can:
 | `Login.tsx` | Auth forms | Zod validation, tab-based login/signup, error display |
 | `Dashboard.tsx` | Home page | Stats cards, pending approvals, recent requests |
 | `RequestList.tsx` | Browse all | Search filter, status filter, grid layout |
-| `RequestDetail.tsx` | View & sign | Realtime subscription, sign/return dialogs, document viewer |
+| `RequestDetail.tsx` | View & sign | Realtime subscription, sign/return dialogs, blob-only document viewer |
 | `CreateRequest.tsx` | 2-step wizard | Details → Approver selection, file upload |
 | `Approvals.tsx` | Approver queue | Pending vs. completed approvals |
 | `AdminDashboard.tsx` | Admin panel | User table with role selector, audit log viewer |
@@ -430,6 +434,7 @@ Admins can:
 | File | Purpose |
 |---|---|
 | `supabase/functions/admin-create-user/index.ts` | Deno Edge Function that creates users with the service role key (admin-only) |
+| `supabase/functions/inline-request-file/index.ts` | Deno Edge Function that authorizes request-file access and returns bytes for blob-only inline viewing |
 | `supabase/migrations/*.sql` | Database schema history — tables, RLS policies, triggers, functions |
 
 ---

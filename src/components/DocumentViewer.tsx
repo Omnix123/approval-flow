@@ -148,10 +148,18 @@ export function DocumentViewer({
   };
 
   const handleDownloadSigned = async () => {
-    if (!resolvedUrl || displayPlacements.length === 0) return;
+    // Merging happens AT DOWNLOAD TIME (per product decision):
+    // we keep individual files in storage, then merge them into one signed PDF
+    // only when the signing process is complete and the user wants the final copy.
+    if (!loadAllPdfSources || displayPlacements.length === 0) return;
     setIsDownloading(true);
     try {
-      const pdfBytes = await generateSignedPdf(resolvedUrl, displayPlacements, steps);
+      const sources = await loadAllPdfSources();
+      if (sources.length === 0) {
+        toast.error('No PDF sources available to merge');
+        return;
+      }
+      const pdfBytes = await generateSignedPdf(sources, displayPlacements, steps);
       const blob = new Blob([new Uint8Array(pdfBytes as any)], { type: 'application/pdf' });
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);

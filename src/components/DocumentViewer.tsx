@@ -49,6 +49,7 @@ export function DocumentViewer({
   requestId,
   allowPlacementAdjustments = false,
   onPlacementUpdate,
+  loadAllPdfSources,
 }: DocumentViewerProps) {
   const [editPlacements, setEditPlacements] = useState<SignaturePlacement[]>(externalPlacements || []);
   const [signDialogOpen, setSignDialogOpen] = useState(false);

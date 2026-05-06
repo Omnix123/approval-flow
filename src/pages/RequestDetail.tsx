@@ -435,6 +435,24 @@ export default function RequestDetail() {
                   requestId={id}
                   allowPlacementAdjustments={canAdjustPlacements}
                   onPlacementUpdate={handlePlacementUpdate}
+                  /*
+                    Provide ALL of the request's PDF files (in upload order) to the
+                    viewer's "Download Signed PDF" action. The viewer calls this only
+                    on click, so we don't waste bandwidth merging files until needed.
+                  */
+                  loadAllPdfSources={async () => {
+                    const pdfFiles = files.filter(
+                      (f) => f.type === 'application/pdf' || f.filename?.toLowerCase().endsWith('.pdf')
+                    );
+                    const sources = await Promise.all(
+                      pdfFiles.map(async (f) => {
+                        const blob = await fetchInlineRequestFile(f.id);
+                        const bytes = await blob.arrayBuffer();
+                        return { fileId: f.id, bytes };
+                      })
+                    );
+                    return sources;
+                  }}
                 />
               ) : (
                 <Card>

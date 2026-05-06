@@ -127,10 +127,16 @@ export function ResizablePlacement({
           height: `${placement.height}%`,
         }}
       >
+        {/*
+          Signature image is auto-fit to the placement box (SignWell-style):
+          - object-contain preserves the original aspect ratio of the drawn signature
+          - The image is centered inside the box (no stretching, no overflow)
+          This matches how the signature is embedded in the exported PDF (aspect-fit).
+        */}
         <img
           src={signedOverlay.signatureDataUrl}
           alt={`Signature by ${signedOverlay.approverName}`}
-          className="w-full h-full object-fill"
+          className="w-full h-full object-contain"
         />
         <div className="absolute -bottom-5 left-0 right-0 text-center">
           <span className="text-[10px] font-medium text-success bg-white/80 px-1 rounded">

@@ -23,6 +23,12 @@ interface DocumentViewerProps {
   requestId?: string;
   allowPlacementAdjustments?: boolean;
   onPlacementUpdate?: (placementId: string, updates: Pick<SignaturePlacement, 'x' | 'y' | 'width' | 'height'>) => void;
+  /**
+   * Async loader that returns ALL of the request's PDFs (in upload order),
+   * each as { fileId, bytes }. Called only when the user clicks
+   * "Download Signed PDF" — this is when the merge happens.
+   */
+  loadAllPdfSources?: () => Promise<import('@/lib/pdfExport').SourcePdf[]>;
 }
 
 function resolveDocumentUrl(url: string) {

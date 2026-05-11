@@ -67,13 +67,19 @@ export function SignatureCanvas({
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    // Set stroke style for signature appearance
-    ctx.strokeStyle = '#1a365d';     // Dark navy blue — professional signature color
-    ctx.lineWidth = 2;                // Thin line for natural handwriting feel
-    ctx.lineCap = 'round';           // Rounded line endings
-    ctx.lineJoin = 'round';          // Smooth line joins
+    // HiDPI / mobile scaling: render at devicePixelRatio so finger / stylus
+    // strokes stay crisp on phones and Retina laptops instead of looking blurry.
+    const ratio = Math.max(window.devicePixelRatio || 1, 1);
+    canvas.width = width * ratio;
+    canvas.height = height * ratio;
+    canvas.style.width = '100%';
+    canvas.style.height = `${height}px`;
+    ctx.scale(ratio, ratio);
 
-    // Start with a clear (transparent) canvas
+    ctx.strokeStyle = '#1a365d';
+    ctx.lineWidth = 2;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
     ctx.clearRect(0, 0, width, height);
   }, [width, height]);
 
@@ -86,15 +92,15 @@ export function SignatureCanvas({
     const canvas = canvasRef.current;
     if (!canvas) return { x: 0, y: 0 };
     const rect = canvas.getBoundingClientRect();
-    const scaleX = canvas.width / rect.width;    // Horizontal scale factor
-    const scaleY = canvas.height / rect.height;  // Vertical scale factor
+    // Coordinates are in CSS pixels (logical units) because the 2D context
+    // is already pre-scaled by devicePixelRatio in the init effect.
+    const scaleX = width / rect.width;
+    const scaleY = height / rect.height;
 
     if ('touches' in e) {
-      // Touch event (mobile)
       const touch = e.touches[0];
       return { x: (touch.clientX - rect.left) * scaleX, y: (touch.clientY - rect.top) * scaleY };
     }
-    // Mouse event (desktop)
     return { x: (e.clientX - rect.left) * scaleX, y: (e.clientY - rect.top) * scaleY };
   };
 

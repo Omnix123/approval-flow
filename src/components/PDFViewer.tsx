@@ -79,6 +79,8 @@ interface PDFViewerProps {
   onPlacementRemove?: (id: string) => void;
   onPlacementResize?: (id: string, width: number, height: number) => void;
   onPlacementMove?: (id: string, x: number, y: number) => void;
+  /** Click-to-sign: invoked when an unsigned placement for the current step is clicked. */
+  onPlacementClick?: (placement: SignaturePlacement) => void;
   isEditing?: boolean;
   currentStepIndex?: number;
   readOnly?: boolean;
@@ -93,6 +95,7 @@ export function PDFViewer({
   onPlacementRemove,
   onPlacementResize,
   onPlacementMove,
+  onPlacementClick,
   isEditing = false,
   currentStepIndex,
   readOnly = false,
@@ -252,6 +255,7 @@ export function PDFViewer({
                   onRemove={onPlacementRemove}
                   onResize={canAdjustExistingPlacements ? onPlacementResize : undefined}
                   onMove={canAdjustExistingPlacements ? onPlacementMove : undefined}
+                  onClick={!isSigned ? onPlacementClick : undefined}
                   containerRef={pageRef as React.RefObject<HTMLDivElement>}
                 />
               );

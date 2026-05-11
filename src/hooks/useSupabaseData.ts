@@ -316,25 +316,44 @@ export function useSignStep() {
 
   return useMutation({
     mutationFn: async (params: { requestId: string; stepId: string; signatureDataUrl: string }) => {
+      const signedAt = new Date().toISOString();
       const { error } = await supabase
         .from('approval_steps')
         .update({
           status: 'APPROVED' as any,
-          signed_at: new Date().toISOString(),
+          signed_at: signedAt,
           signature_path: params.signatureDataUrl,
         })
         .eq('id', params.stepId);
 
       if (error) throw error;
 
-      // Audit log
+      // Audit log — capture forensics for the signature event so we can
+      // later prove who signed, when, from where, and on what device.
+      // IP is fetched best-effort from a public echo service; if it fails
+      // we still log the rest (user-agent, timezone, signed_at).
       if (user) {
+        let ipAddress: string | null = null;
+        try {
+          const r = await fetch('https://api.ipify.org?format=json');
+          if (r.ok) ipAddress = (await r.json())?.ip ?? null;
+        } catch {
+          // Ignore — IP is optional metadata.
+        }
         await supabase.from('audit_logs').insert({
           user_id: user.id,
           action: 'SIGN_STEP',
           resource_type: 'approval_step',
           resource_id: params.stepId,
-          details: { request_id: params.requestId },
+          ip_address: ipAddress,
+          user_agent: navigator.userAgent,
+          details: {
+            request_id: params.requestId,
+            signed_at: signedAt,
+            timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+            screen: `${window.screen.width}x${window.screen.height}`,
+            device_pixel_ratio: window.devicePixelRatio || 1,
+          },
         });
       }
     },

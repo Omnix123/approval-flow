@@ -57,18 +57,27 @@ export default function SignMobile() {
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
+    // HiDPI scaling for crisp finger / stylus signatures on phones.
+    const ratio = Math.max(window.devicePixelRatio || 1, 1);
+    const cssW = 400, cssH = 200;
+    canvas.width = cssW * ratio;
+    canvas.height = cssH * ratio;
+    canvas.style.width = '100%';
+    canvas.style.height = `${cssH}px`;
+    ctx.scale(ratio, ratio);
     ctx.strokeStyle = '#1a365d';
     ctx.lineWidth = 3;
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.clearRect(0, 0, cssW, cssH);
   }, [tokenData]);
 
   const getCoords = (e: React.TouchEvent | React.MouseEvent) => {
     const canvas = canvasRef.current!;
     const rect = canvas.getBoundingClientRect();
-    const scaleX = canvas.width / rect.width;
-    const scaleY = canvas.height / rect.height;
+    // Logical (CSS-pixel) units since context is pre-scaled by DPR.
+    const scaleX = 400 / rect.width;
+    const scaleY = 200 / rect.height;
     if ('touches' in e) {
       const t = e.touches[0];
       return { x: (t.clientX - rect.left) * scaleX, y: (t.clientY - rect.top) * scaleY };

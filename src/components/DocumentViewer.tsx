@@ -12,6 +12,7 @@ import { toast } from 'sonner';
 import { generateSignedPdf } from '@/lib/pdfExport';
 import { createQrToken } from '@/lib/signatureStore';
 import { QRCodeSVG } from 'qrcode.react';
+import { supabase } from '@/integrations/supabase/client';
 
 interface DocumentViewerProps {
   documentUrl: string;
@@ -188,7 +189,7 @@ export function DocumentViewer({
   // Use current hostname so QR works on local network (e.g. 192.168.x.x:5173)
   const qrUrl = qrToken ? `${window.location.origin}/sign-mobile/${qrToken}` : '';
 
-  // Listen for QR signature completion via BroadcastChannel
+  // Listen for QR signature completion via BroadcastChannel (same-browser tabs)
   useEffect(() => {
     if (!qrToken || !currentStep || !requestId) return;
     const bc = new BroadcastChannel('ema_qr_signing');
@@ -204,6 +205,34 @@ export function DocumentViewer({
     };
     return () => bc.close();
   }, [qrToken, currentStep, requestId, onSign, editPlacements]);
+
+  // Cross-device QR sync: when the phone submits the signature it updates
+  // qr_signing_tokens in the database. BroadcastChannel only works between
+  // tabs in the SAME browser, so for true phone→laptop signing we also
+  // subscribe to Supabase Realtime on this token row.
+  useEffect(() => {
+    if (!qrToken) return;
+    const channel = supabase
+      .channel(`qr-${qrToken}`)
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'qr_signing_tokens', filter: `token=eq.${qrToken}` },
+        (payload) => {
+          const row = payload.new as { completed: boolean; signature_data_url: string | null };
+          if (row.completed && row.signature_data_url) {
+            // The phone already wrote the approval_step too, so the parent
+            // page's approval_steps subscription will refetch automatically.
+            // Here we just close the QR dialog and notify the user.
+            setQrDialogOpen(false);
+            qrTokenRef.current = null;
+            setQrToken(null);
+            toast.success('Signature received from mobile device!');
+          }
+        }
+      )
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [qrToken]);
 
   const handleCopyLink = () => {
     if (qrUrl) {
@@ -256,6 +285,9 @@ export function DocumentViewer({
               onPlacementRemove={isEditing ? handleRemovePlacement : undefined}
               onPlacementResize={isEditing || allowPlacementAdjustments ? handleResizePlacement : undefined}
               onPlacementMove={isEditing || allowPlacementAdjustments ? handleMovePlacement : undefined}
+              /* Click-to-sign (DocuSign-style): clicking the current step's
+                 unsigned placement opens the signature dialog. */
+              onPlacementClick={canSign && onSign ? () => setSignDialogOpen(true) : undefined}
               isEditing={isEditing}
               currentStepIndex={currentStepIndex}
               readOnly={!isEditing}

@@ -170,11 +170,14 @@ export function ResizablePlacement({
     );
   }
 
+  const isClickToSign = !!onClick && isCurrentStep;
   return (
     <div
+      onClick={isClickToSign ? (e) => { e.stopPropagation(); onClick!(placement); } : undefined}
       className={cn(
         'absolute border-2 border-dashed rounded transition-colors group',
         isCurrentStep ? 'border-primary bg-primary/10' : 'border-muted-foreground/40 bg-muted/5',
+        isClickToSign && 'cursor-pointer hover:bg-primary/20 hover:border-primary animate-pulse',
         (dragging || resizing) && 'ring-2 ring-primary/50'
       )}
       style={{
@@ -184,9 +187,9 @@ export function ResizablePlacement({
         height: `${placement.height}%`,
       }}
     >
-      <div className="absolute inset-0 flex items-center justify-center">
+      <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
         <span className="text-xs font-medium text-muted-foreground select-none">
-          {placement.label || 'Sign Here'}
+          {isClickToSign ? 'Click to sign' : (placement.label || 'Sign Here')}
         </span>
       </div>
 

@@ -285,6 +285,9 @@ export function DocumentViewer({
               onPlacementRemove={isEditing ? handleRemovePlacement : undefined}
               onPlacementResize={isEditing || allowPlacementAdjustments ? handleResizePlacement : undefined}
               onPlacementMove={isEditing || allowPlacementAdjustments ? handleMovePlacement : undefined}
+              /* Click-to-sign (DocuSign-style): clicking the current step's
+                 unsigned placement opens the signature dialog. */
+              onPlacementClick={canSign && onSign ? () => setSignDialogOpen(true) : undefined}
               isEditing={isEditing}
               currentStepIndex={currentStepIndex}
               readOnly={!isEditing}

@@ -79,6 +79,8 @@ interface PDFViewerProps {
   onPlacementRemove?: (id: string) => void;
   onPlacementResize?: (id: string, width: number, height: number) => void;
   onPlacementMove?: (id: string, x: number, y: number) => void;
+  /** Click-to-sign: invoked when an unsigned placement for the current step is clicked. */
+  onPlacementClick?: (placement: SignaturePlacement) => void;
   isEditing?: boolean;
   currentStepIndex?: number;
   readOnly?: boolean;

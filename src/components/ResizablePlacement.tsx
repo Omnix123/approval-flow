@@ -30,6 +30,7 @@ export function ResizablePlacement({
   onRemove,
   onResize,
   onMove,
+  onClick,
   containerRef,
 }: ResizablePlacementProps) {
   const [resizing, setResizing] = useState(false);

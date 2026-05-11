@@ -67,13 +67,19 @@ export function SignatureCanvas({
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    // Set stroke style for signature appearance
-    ctx.strokeStyle = '#1a365d';     // Dark navy blue — professional signature color
-    ctx.lineWidth = 2;                // Thin line for natural handwriting feel
-    ctx.lineCap = 'round';           // Rounded line endings
-    ctx.lineJoin = 'round';          // Smooth line joins
+    // HiDPI / mobile scaling: render at devicePixelRatio so finger / stylus
+    // strokes stay crisp on phones and Retina laptops instead of looking blurry.
+    const ratio = Math.max(window.devicePixelRatio || 1, 1);
+    canvas.width = width * ratio;
+    canvas.height = height * ratio;
+    canvas.style.width = '100%';
+    canvas.style.height = `${height}px`;
+    ctx.scale(ratio, ratio);
 
-    // Start with a clear (transparent) canvas
+    ctx.strokeStyle = '#1a365d';
+    ctx.lineWidth = 2;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
     ctx.clearRect(0, 0, width, height);
   }, [width, height]);
 

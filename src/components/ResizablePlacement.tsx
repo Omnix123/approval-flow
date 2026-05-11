@@ -14,6 +14,8 @@ interface ResizablePlacementProps {
   onRemove?: (id: string) => void;
   onResize?: (id: string, width: number, height: number) => void;
   onMove?: (id: string, x: number, y: number) => void;
+  /** Click-to-sign: when provided, clicking the placement opens the sign dialog (DocuSign-style). */
+  onClick?: (placement: SignaturePlacement) => void;
   containerRef: React.RefObject<HTMLDivElement>;
 }
 

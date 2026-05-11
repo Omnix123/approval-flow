@@ -92,15 +92,15 @@ export function SignatureCanvas({
     const canvas = canvasRef.current;
     if (!canvas) return { x: 0, y: 0 };
     const rect = canvas.getBoundingClientRect();
-    const scaleX = canvas.width / rect.width;    // Horizontal scale factor
-    const scaleY = canvas.height / rect.height;  // Vertical scale factor
+    // Coordinates are in CSS pixels (logical units) because the 2D context
+    // is already pre-scaled by devicePixelRatio in the init effect.
+    const scaleX = width / rect.width;
+    const scaleY = height / rect.height;
 
     if ('touches' in e) {
-      // Touch event (mobile)
       const touch = e.touches[0];
       return { x: (touch.clientX - rect.left) * scaleX, y: (touch.clientY - rect.top) * scaleY };
     }
-    // Mouse event (desktop)
     return { x: (e.clientX - rect.left) * scaleX, y: (e.clientY - rect.top) * scaleY };
   };
 

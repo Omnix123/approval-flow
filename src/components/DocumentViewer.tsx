@@ -12,6 +12,7 @@ import { toast } from 'sonner';
 import { generateSignedPdf } from '@/lib/pdfExport';
 import { createQrToken } from '@/lib/signatureStore';
 import { QRCodeSVG } from 'qrcode.react';
+import { supabase } from '@/integrations/supabase/client';
 
 interface DocumentViewerProps {
   documentUrl: string;

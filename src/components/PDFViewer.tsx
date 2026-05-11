@@ -255,6 +255,7 @@ export function PDFViewer({
                   onRemove={onPlacementRemove}
                   onResize={canAdjustExistingPlacements ? onPlacementResize : undefined}
                   onMove={canAdjustExistingPlacements ? onPlacementMove : undefined}
+                  onClick={!isSigned ? onPlacementClick : undefined}
                   containerRef={pageRef as React.RefObject<HTMLDivElement>}
                 />
               );

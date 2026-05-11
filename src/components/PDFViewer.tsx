@@ -95,6 +95,7 @@ export function PDFViewer({
   onPlacementRemove,
   onPlacementResize,
   onPlacementMove,
+  onPlacementClick,
   isEditing = false,
   currentStepIndex,
   readOnly = false,

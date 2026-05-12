@@ -117,7 +117,15 @@ export default function SignMobile() {
 
   const handleSubmit = async () => {
     if (!canvasRef.current || !token || !tokenData) return;
-    const dataUrl = canvasRef.current.toDataURL('image/png');
+    // Normalize: downscale the DPR-scaled canvas back to logical (400x200)
+    // pixels so the signature embeds at the correct size in the PDF.
+    const tmp = document.createElement('canvas');
+    tmp.width = 400;
+    tmp.height = 200;
+    const tctx = tmp.getContext('2d');
+    if (!tctx) return;
+    tctx.drawImage(canvasRef.current, 0, 0, canvasRef.current.width, canvasRef.current.height, 0, 0, 400, 200);
+    const dataUrl = tmp.toDataURL('image/png');
 
     // Update the token in the database
     const { error } = await supabase

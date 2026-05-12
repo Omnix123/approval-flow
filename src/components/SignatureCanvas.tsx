@@ -127,12 +127,30 @@ export function SignatureCanvas({
     setHasSignature(true);
   };
 
+  /**
+   * Export the signature at LOGICAL size (un-scaled by devicePixelRatio).
+   * The drawing canvas is internally `width*DPR` pixels for crispness, but
+   * downstream consumers (PDF embedding, storage) expect a normal-sized image
+   * matching the placement box. Without this normalization the signature
+   * embeds at 2-3x its intended size on Retina/mobile.
+   */
+  const exportSignature = (): string | null => {
+    const canvas = canvasRef.current;
+    if (!canvas) return null;
+    const tmp = document.createElement('canvas');
+    tmp.width = width;
+    tmp.height = height;
+    const tctx = tmp.getContext('2d');
+    if (!tctx) return null;
+    tctx.drawImage(canvas, 0, 0, canvas.width, canvas.height, 0, 0, width, height);
+    return tmp.toDataURL('image/png');
+  };
+
   /** End the current stroke and export the signature */
   const stopDrawing = () => {
     setIsDrawing(false);
     if (hasSignature && canvasRef.current && onSignatureChange) {
-      // Export canvas as a PNG data URL (base64-encoded image)
-      onSignatureChange(canvasRef.current.toDataURL('image/png'));
+      onSignatureChange(exportSignature());
     }
   };
 

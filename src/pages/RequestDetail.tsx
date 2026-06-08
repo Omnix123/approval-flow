@@ -22,6 +22,7 @@
 
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -33,10 +34,12 @@ import { DocumentViewer } from '@/components/DocumentViewer';
 import { SignatureCanvas } from '@/components/SignatureCanvas';
 import { useRequestDetail, useSignStep, useReturnStep } from '@/hooks/useSupabaseData';
 import { supabase } from '@/integrations/supabase/client';
+import { createQrSigningToken } from '@/lib/qrSigning';
+import { QRCodeSVG } from 'qrcode.react';
 import type { SignaturePlacement } from '@/components/PDFViewer';
 import {
   ArrowLeft, FileText, Building2, Calendar, User, Pen, RotateCcw,
-  MessageSquare, CheckCircle, AlertCircle, Eye,
+  MessageSquare, CheckCircle, AlertCircle, Eye, QrCode, Copy, ExternalLink,
 } from 'lucide-react';
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
@@ -47,10 +50,14 @@ export default function RequestDetail() {
   // Extract the request ID from the URL parameter (/requests/:id)
   const { id } = useParams<{ id: string }>();
   const { user } = useAuth();
+  const queryClient = useQueryClient();
 
   // Dialog state for sign and return modals
   const [returnDialogOpen, setReturnDialogOpen] = useState(false);
   const [signDialogOpen, setSignDialogOpen] = useState(false);
+  const [qrDialogOpen, setQrDialogOpen] = useState(false);
+  const [qrToken, setQrToken] = useState<string | null>(null);
+  const [isCreatingQrToken, setIsCreatingQrToken] = useState(false);
   const [returnMessage, setReturnMessage] = useState('');
   const [signatureDataUrl, setSignatureDataUrl] = useState<string | null>(null);
   

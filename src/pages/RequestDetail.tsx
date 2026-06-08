@@ -176,11 +176,18 @@ export default function RequestDetail() {
     const channel = supabase
       .channel(`request-${id}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'approval_steps', filter: `request_id=eq.${id}` }, () => {
-        // Realtime event received — React Query will refetch automatically
+        // Realtime event received — refresh cached request data so signatures
+        // submitted from another tab/phone appear without a manual page reload.
+        queryClient.invalidateQueries({ queryKey: ['requests'] });
+        queryClient.invalidateQueries({ queryKey: ['all-steps'] });
+        queryClient.invalidateQueries({ queryKey: ['request-detail'] });
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'qr_signing_tokens', filter: `request_id=eq.${id}` }, async (payload) => {
         // When a QR token is marked as completed, notify the user
         if (payload.eventType === 'UPDATE' && (payload.new as any).completed) {
+          queryClient.invalidateQueries({ queryKey: ['requests'] });
+          queryClient.invalidateQueries({ queryKey: ['all-steps'] });
+          queryClient.invalidateQueries({ queryKey: ['request-detail'] });
           toast.success('Signature received from mobile device!');
         }
       })
@@ -188,7 +195,7 @@ export default function RequestDetail() {
 
     // Cleanup: remove the channel when leaving the page
     return () => { supabase.removeChannel(channel); };
-  }, [id]);
+  }, [id, queryClient]);
 
   /**
    * DETERMINE CURRENT USER'S ACTIONABLE STEP
@@ -209,6 +216,7 @@ export default function RequestDetail() {
   }, [user, steps]);
 
   const canApprove = !!currentUserStep;
+  const qrUrl = qrToken ? `${window.location.origin}/sign-mobile/${qrToken}` : '';
 
   /** Format a date string to a human-readable format (e.g., "15 March 2026, 14:30") */
   const formatDate = (dateStr: string) =>
@@ -237,6 +245,43 @@ export default function RequestDetail() {
         onError: (err) => toast.error(err.message),
       }
     );
+  };
+
+  /**
+   * QR SIGNING HANDLER
+   * Creates a real backend token and displays it as a QR code. A phone cannot
+   * read the desktop browser's localStorage, so database-backed tokens are the
+   * required mechanism for true cross-device signing.
+   */
+  const handleOpenQrDialog = async () => {
+    if (!id || !currentUserStep) return;
+    setIsCreatingQrToken(true);
+    try {
+      if (!qrToken) {
+        const token = await createQrSigningToken({
+          requestId: id,
+          stepId: currentUserStep.id,
+          approverName: currentUserStep.approver_name,
+        });
+        setQrToken(token);
+      }
+      setSignDialogOpen(false);
+      setQrDialogOpen(true);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Unable to create phone signing link');
+    } finally {
+      setIsCreatingQrToken(false);
+    }
+  };
+
+  const handleCopyQrLink = () => {
+    if (!qrUrl) return;
+    navigator.clipboard.writeText(qrUrl);
+    toast.success('Phone signing link copied');
+  };
+
+  const handleOpenQrLink = () => {
+    if (qrUrl) window.open(qrUrl, '_blank');
   };
 
   /**

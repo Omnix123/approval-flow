@@ -410,7 +410,7 @@ Admins can:
 | `Login.tsx` | Auth forms | Zod validation, tab-based login/signup, error display |
 | `Dashboard.tsx` | Home page | Stats cards, pending approvals, recent requests |
 | `RequestList.tsx` | Browse all | Search filter, status filter, grid layout |
-| `RequestDetail.tsx` | View & sign | Realtime subscription, sign/return dialogs, blob-only document viewer |
+| `RequestDetail.tsx` | View & sign | Realtime subscription, sign/return dialogs, QR signing dialog, blob-only document viewer |
 | `CreateRequest.tsx` | 2-step wizard | Details → Approver selection, file upload |
 | `Approvals.tsx` | Approver queue | Pending vs. completed approvals |
 | `AdminDashboard.tsx` | Admin panel | User table with role selector, audit log viewer |
@@ -423,7 +423,7 @@ Admins can:
 | `AppLayout.tsx` | Sticky header with navigation, user avatar dropdown, mobile menu |
 | `ApprovalProgress.tsx` | Vertical timeline showing each approval step's status |
 | `DocumentViewer.tsx` | PDF preview with signature overlay, QR code dialog |
-| `SignatureCanvas.tsx` | HTML5 Canvas for drawing signatures with touch support |
+| `SignatureCanvas.tsx` | HTML5 Canvas for drawing normalized, trimmed signatures with touch support |
 | `StatusBadge.tsx` | Color-coded status pill (Pending=yellow, Approved=green, etc.) |
 | `RequestCard.tsx` | Card displaying request summary with progress bar |
 
@@ -433,6 +433,8 @@ Admins can:
 |---|---|
 | `validation.ts` | Zod schemas: loginSchema, signupSchema, createRequestSchema, addUserSchema, returnStepSchema |
 | `pdfExport.ts` | Uses pdf-lib to embed signature images into a PDF for download |
+| `qrSigning.ts` | Creates database-backed QR tokens for true phone-to-desktop signing |
+| `signatureImage.ts` | Normalizes high-DPI canvas exports and trims transparent signature whitespace |
 | `signatureStore.ts` | LocalStorage helpers for saving/retrieving signatures and QR tokens |
 | `utils.ts` | `cn()` helper for merging Tailwind CSS classes |
 
@@ -441,6 +443,7 @@ Admins can:
 | File | Purpose |
 |---|---|
 | `supabase/functions/admin-create-user/index.ts` | Deno Edge Function that creates users with the service role key (admin-only) |
+| `supabase/functions/complete-qr-signing/index.ts` | Deno Edge Function that completes QR/mobile signing without requiring phone login |
 | `supabase/functions/inline-request-file/index.ts` | Deno Edge Function that authorizes request-file access and returns bytes for blob-only inline viewing |
 | `supabase/migrations/*.sql` | Database schema history — tables, RLS policies, triggers, functions |
 

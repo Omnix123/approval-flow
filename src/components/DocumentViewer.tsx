@@ -168,7 +168,9 @@ export function DocumentViewer({
         return;
       }
       const pdfBytes = await generateSignedPdf(sources, finalPdfPlacements, steps);
-      const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+      const pdfArrayBuffer = new ArrayBuffer(pdfBytes.byteLength);
+      new Uint8Array(pdfArrayBuffer).set(pdfBytes);
+      const blob = new Blob([pdfArrayBuffer], { type: 'application/pdf' });
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
       a.download = 'signed_document.pdf';

@@ -324,20 +324,27 @@ useSignStep mutation fires:
 Supabase Realtime broadcasts change → other users see update instantly
 ```
 
+**Signature precision:** Signature canvases are rendered at `devicePixelRatio`
+internally so mouse, touch, and stylus strokes stay sharp on high-resolution
+screens. Before saving, the app exports a normalized PNG at the logical canvas
+size and trims transparent whitespace around the ink. This prevents high-DPI
+mobile signatures from embedding too large in the PDF and lets `pdf-lib` fit the
+signature cleanly inside the saved placement box.
+
 ### QR Code Mobile Signing
 
 ```
 Desktop                              │  Mobile Phone
 ─────────────────────────────────────│──────────────────
 1. Click "Sign with Phone"           │
-2. Generate QR token (15 min expiry) │
+2. Generate database token           │
 3. Store token in qr_signing_tokens  │
 4. Display QR code                   │
                                      │  5. Scan QR → opens /sign-mobile/:token
                                      │  6. Fetch token data from database
                                      │  7. Draw signature on canvas
-                                     │  8. UPDATE qr_signing_tokens (completed=true)
-                                     │  9. UPDATE approval_steps (APPROVED)
+                                     │  8. Call complete-qr-signing function
+                                     │  9. Function updates token + approval step
 10. Realtime subscription detects    │
     the change → shows toast         │
     "Signature received!"            │
@@ -370,7 +377,7 @@ When an approver signs a document, other users viewing the same request see the 
 
 ### 8.3 PDF Download with Embedded Signatures
 
-Once all approvers have signed, the system can generate a PDF with all signatures visually embedded at their designated positions using the `pdf-lib` library.
+Once all approvers have signed, the system can generate one final PDF with all uploaded PDFs merged in upload order and all signatures visually embedded at their designated positions using the `pdf-lib` library. Signature images are fitted inside the placement rectangle with their aspect ratio preserved, so the ink is centered and never stretched.
 
 ### 8.4 Inline Document Viewing
 

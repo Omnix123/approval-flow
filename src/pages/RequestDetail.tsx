@@ -353,6 +353,9 @@ export default function RequestDetail() {
               </div>
               <div className="flex flex-wrap gap-3">
                 <Button onClick={() => setSignDialogOpen(true)}><Pen className="mr-2 h-4 w-4" />Sign Document</Button>
+                <Button variant="outline" onClick={handleOpenQrDialog} disabled={isCreatingQrToken}>
+                  <QrCode className="mr-2 h-4 w-4" />{isCreatingQrToken ? 'Creating...' : 'Sign with Phone'}
+                </Button>
                 <Button variant="outline" onClick={() => setReturnDialogOpen(true)}><RotateCcw className="mr-2 h-4 w-4" />Return</Button>
               </div>
             </div>
@@ -540,9 +543,43 @@ export default function RequestDetail() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setSignDialogOpen(false)}>Cancel</Button>
+            <Button variant="outline" onClick={handleOpenQrDialog} disabled={isCreatingQrToken}>
+              <QrCode className="mr-2 h-4 w-4" />{isCreatingQrToken ? 'Creating...' : 'Sign with Phone'}
+            </Button>
             <Button onClick={handleSign} disabled={!signatureDataUrl || signStepMutation.isPending}>
               <Pen className="mr-2 h-4 w-4" />Confirm Signature
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ==================== QR SIGNING DIALOG ==================== */}
+      <Dialog open={qrDialogOpen} onOpenChange={setQrDialogOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Sign with Phone</DialogTitle>
+            <DialogDescription>Scan this QR code with your phone camera, or copy the signing link.</DialogDescription>
+          </DialogHeader>
+          <div className="flex justify-center py-6">
+            {qrUrl && (
+              <div className="rounded-lg bg-white p-4">
+                <QRCodeSVG value={qrUrl} size={200} />
+              </div>
+            )}
+          </div>
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" className="flex-1" onClick={handleCopyQrLink}>
+              <Copy className="mr-1 h-4 w-4" />Copy Link
+            </Button>
+            <Button variant="outline" size="sm" className="flex-1" onClick={handleOpenQrLink}>
+              <ExternalLink className="mr-1 h-4 w-4" />Open
+            </Button>
+          </div>
+          <p className="text-center text-xs text-muted-foreground">
+            The link expires after 15 minutes and the desktop view updates automatically after signing.
+          </p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setQrDialogOpen(false)}>Close</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

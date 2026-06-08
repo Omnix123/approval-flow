@@ -487,6 +487,7 @@ export default function RequestDetail() {
                   }}
                   isEditing={false}
                   placements={selectedFilePlacements}
+                  downloadPlacements={placements}
                   requestId={id}
                   allowPlacementAdjustments={canAdjustPlacements}
                   onPlacementUpdate={handlePlacementUpdate}

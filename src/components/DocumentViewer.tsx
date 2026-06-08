@@ -22,6 +22,8 @@ interface DocumentViewerProps {
   onSign?: (signatureDataUrl: string, placements: SignaturePlacement[]) => void;
   isEditing?: boolean;
   placements?: SignaturePlacement[];
+  /** Optional full placement set used only for final signed-PDF export. */
+  downloadPlacements?: SignaturePlacement[];
   requestId?: string;
   allowPlacementAdjustments?: boolean;
   onPlacementUpdate?: (placementId: string, updates: Pick<SignaturePlacement, 'x' | 'y' | 'width' | 'height'>) => void;
@@ -48,6 +50,7 @@ export function DocumentViewer({
   onSign,
   isEditing = false,
   placements: externalPlacements,
+  downloadPlacements,
   requestId,
   allowPlacementAdjustments = false,
   onPlacementUpdate,
@@ -75,6 +78,7 @@ export function DocumentViewer({
   }, [externalPlacements]);
 
   const displayPlacements = editPlacements;
+  const finalPdfPlacements = downloadPlacements || displayPlacements;
 
   const signedOverlays = useMemo(() => {
     return steps
@@ -155,7 +159,7 @@ export function DocumentViewer({
     // Merging happens AT DOWNLOAD TIME (per product decision):
     // we keep individual files in storage, then merge them into one signed PDF
     // only when the signing process is complete and the user wants the final copy.
-    if (!loadAllPdfSources || displayPlacements.length === 0) return;
+    if (!loadAllPdfSources || finalPdfPlacements.length === 0) return;
     setIsDownloading(true);
     try {
       const sources = await loadAllPdfSources();
@@ -163,7 +167,7 @@ export function DocumentViewer({
         toast.error('No PDF sources available to merge');
         return;
       }
-      const pdfBytes = await generateSignedPdf(sources, displayPlacements, steps);
+      const pdfBytes = await generateSignedPdf(sources, finalPdfPlacements, steps);
       const blob = new Blob([new Uint8Array(pdfBytes as any)], { type: 'application/pdf' });
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);

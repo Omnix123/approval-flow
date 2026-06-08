@@ -278,7 +278,7 @@ export function DocumentViewer({
               <FileText className="h-4 w-4" />Document Preview
             </CardTitle>
             <div className="flex items-center gap-2">
-              {allApproved && displayPlacements.length > 0 && (
+              {allApproved && finalPdfPlacements.length > 0 && (
                 <Button size="sm" variant="outline" onClick={handleDownloadSigned} disabled={isDownloading}>
                   <Download className="h-4 w-4 mr-1" />
                   {isDownloading ? 'Generating...' : 'Download Signed PDF'}

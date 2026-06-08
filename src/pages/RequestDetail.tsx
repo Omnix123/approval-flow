@@ -153,7 +153,7 @@ export default function RequestDetail() {
         y: updates.y,
         width: updates.width,
         height: updates.height,
-      } as any)
+      })
       .eq('id', placementId);
 
     if (error) {
@@ -184,7 +184,8 @@ export default function RequestDetail() {
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'qr_signing_tokens', filter: `request_id=eq.${id}` }, async (payload) => {
         // When a QR token is marked as completed, notify the user
-        if (payload.eventType === 'UPDATE' && (payload.new as any).completed) {
+        const qrRow = payload.new as { completed?: boolean };
+        if (payload.eventType === 'UPDATE' && qrRow.completed) {
           queryClient.invalidateQueries({ queryKey: ['requests'] });
           queryClient.invalidateQueries({ queryKey: ['all-steps'] });
           queryClient.invalidateQueries({ queryKey: ['request-detail'] });

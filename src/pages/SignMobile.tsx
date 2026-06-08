@@ -24,9 +24,15 @@ import { supabase } from '@/integrations/supabase/client';
 import { exportNormalizedSignature } from '@/lib/signatureImage';
 import { Check, AlertCircle } from 'lucide-react';
 
+interface QrSigningTokenRow {
+  approver_name: string;
+  completed: boolean;
+  expires_at: string;
+}
+
 export default function SignMobile() {
   const { token } = useParams<{ token: string }>();
-  const [tokenData, setTokenData] = useState<any>(null);
+  const [tokenData, setTokenData] = useState<QrSigningTokenRow | null>(null);
   const [loading, setLoading] = useState(true);
   const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);

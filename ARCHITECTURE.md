@@ -114,7 +114,7 @@ src/
 ├── lib/                             # Utility libraries
 │   ├── validation.ts                 # Zod schemas for all form inputs
 │   ├── pdfExport.ts                  # Generate signed PDFs with embedded signatures
-│   ├── signatureStore.ts             # localStorage cache for saved signatures + QR tokens
+│   ├── signatureStore.ts             # localStorage cache for reusable saved signatures
 │   └── utils.ts                      # General utilities (cn helper for Tailwind)
 │
 ├── types/
@@ -435,7 +435,7 @@ Admins can:
 | `pdfExport.ts` | Uses pdf-lib to embed signature images into a PDF for download |
 | `qrSigning.ts` | Creates database-backed QR tokens for true phone-to-desktop signing |
 | `signatureImage.ts` | Normalizes high-DPI canvas exports and trims transparent signature whitespace |
-| `signatureStore.ts` | LocalStorage helpers for saving/retrieving signatures and QR tokens |
+| `signatureStore.ts` | LocalStorage helpers for saving/retrieving reusable signatures |
 | `utils.ts` | `cn()` helper for merging Tailwind CSS classes |
 
 ### Backend Files

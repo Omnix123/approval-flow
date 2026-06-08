@@ -10,9 +10,10 @@ import { ApprovalStep } from '@/types';
 import { Check, Pen, FileText, Download, QrCode, ExternalLink, Copy } from 'lucide-react';
 import { toast } from 'sonner';
 import { generateSignedPdf } from '@/lib/pdfExport';
-import { createQrToken } from '@/lib/signatureStore';
+import { createQrSigningToken } from '@/lib/qrSigning';
 import { QRCodeSVG } from 'qrcode.react';
 import { supabase } from '@/integrations/supabase/client';
+import { useQueryClient } from '@tanstack/react-query';
 
 interface DocumentViewerProps {
   documentUrl: string;
@@ -21,6 +22,8 @@ interface DocumentViewerProps {
   onSign?: (signatureDataUrl: string, placements: SignaturePlacement[]) => void;
   isEditing?: boolean;
   placements?: SignaturePlacement[];
+  /** Optional full placement set used only for final signed-PDF export. */
+  downloadPlacements?: SignaturePlacement[];
   requestId?: string;
   allowPlacementAdjustments?: boolean;
   onPlacementUpdate?: (placementId: string, updates: Pick<SignaturePlacement, 'x' | 'y' | 'width' | 'height'>) => void;
@@ -47,6 +50,7 @@ export function DocumentViewer({
   onSign,
   isEditing = false,
   placements: externalPlacements,
+  downloadPlacements,
   requestId,
   allowPlacementAdjustments = false,
   onPlacementUpdate,
@@ -57,8 +61,10 @@ export function DocumentViewer({
   const [qrDialogOpen, setQrDialogOpen] = useState(false);
   const [signatureDataUrl, setSignatureDataUrl] = useState<string | null>(null);
   const [isDownloading, setIsDownloading] = useState(false);
+  const [isCreatingQrToken, setIsCreatingQrToken] = useState(false);
   const [qrToken, setQrToken] = useState<string | null>(null);
   const qrTokenRef = useRef<string | null>(null);
+  const queryClient = useQueryClient();
 
   const currentStep = steps.find((s) => s.id === currentUserStepId);
   const currentStepIndex = currentStep?.order_index;
@@ -72,6 +78,7 @@ export function DocumentViewer({
   }, [externalPlacements]);
 
   const displayPlacements = editPlacements;
+  const finalPdfPlacements = downloadPlacements || displayPlacements;
 
   const signedOverlays = useMemo(() => {
     return steps
@@ -152,7 +159,7 @@ export function DocumentViewer({
     // Merging happens AT DOWNLOAD TIME (per product decision):
     // we keep individual files in storage, then merge them into one signed PDF
     // only when the signing process is complete and the user wants the final copy.
-    if (!loadAllPdfSources || displayPlacements.length === 0) return;
+    if (!loadAllPdfSources || finalPdfPlacements.length === 0) return;
     setIsDownloading(true);
     try {
       const sources = await loadAllPdfSources();
@@ -160,8 +167,10 @@ export function DocumentViewer({
         toast.error('No PDF sources available to merge');
         return;
       }
-      const pdfBytes = await generateSignedPdf(sources, displayPlacements, steps);
-      const blob = new Blob([new Uint8Array(pdfBytes as any)], { type: 'application/pdf' });
+      const pdfBytes = await generateSignedPdf(sources, finalPdfPlacements, steps);
+      const pdfArrayBuffer = new ArrayBuffer(pdfBytes.byteLength);
+      new Uint8Array(pdfArrayBuffer).set(pdfBytes);
+      const blob = new Blob([pdfArrayBuffer], { type: 'application/pdf' });
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
       a.download = 'signed_document.pdf';
@@ -177,13 +186,25 @@ export function DocumentViewer({
   };
 
   // Create QR token only when user clicks "Sign with Phone"
-  const handleOpenQrDialog = useCallback(() => {
+  const handleOpenQrDialog = useCallback(async () => {
     if (!requestId || !currentStep) return;
-    if (!qrTokenRef.current) {
-      qrTokenRef.current = createQrToken(requestId, currentStep.id, currentStep.approver_name);
-      setQrToken(qrTokenRef.current);
+    setIsCreatingQrToken(true);
+    try {
+      if (!qrTokenRef.current) {
+        qrTokenRef.current = await createQrSigningToken({
+          requestId,
+          stepId: currentStep.id,
+          approverName: currentStep.approver_name,
+        });
+        setQrToken(qrTokenRef.current);
+      }
+      setSignDialogOpen(false);
+      setQrDialogOpen(true);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Unable to create phone signing link');
+    } finally {
+      setIsCreatingQrToken(false);
     }
-    setQrDialogOpen(true);
   }, [requestId, currentStep]);
 
   // Use current hostname so QR works on local network (e.g. 192.168.x.x:5173)
@@ -226,13 +247,16 @@ export function DocumentViewer({
             setQrDialogOpen(false);
             qrTokenRef.current = null;
             setQrToken(null);
+            queryClient.invalidateQueries({ queryKey: ['requests'] });
+            queryClient.invalidateQueries({ queryKey: ['all-steps'] });
+            queryClient.invalidateQueries({ queryKey: ['request-detail'] });
             toast.success('Signature received from mobile device!');
           }
         }
       )
       .subscribe();
     return () => { supabase.removeChannel(channel); };
-  }, [qrToken]);
+  }, [qrToken, queryClient]);
 
   const handleCopyLink = () => {
     if (qrUrl) {
@@ -256,7 +280,7 @@ export function DocumentViewer({
               <FileText className="h-4 w-4" />Document Preview
             </CardTitle>
             <div className="flex items-center gap-2">
-              {allApproved && displayPlacements.length > 0 && (
+              {allApproved && finalPdfPlacements.length > 0 && (
                 <Button size="sm" variant="outline" onClick={handleDownloadSigned} disabled={isDownloading}>
                   <Download className="h-4 w-4 mr-1" />
                   {isDownloading ? 'Generating...' : 'Download Signed PDF'}
@@ -264,8 +288,8 @@ export function DocumentViewer({
               )}
               {canSign && onSign && (
                 <>
-                  <Button size="sm" variant="outline" onClick={handleOpenQrDialog}>
-                    <QrCode className="h-4 w-4 mr-1" />Sign with Phone
+                  <Button size="sm" variant="outline" onClick={handleOpenQrDialog} disabled={isCreatingQrToken}>
+                    <QrCode className="h-4 w-4 mr-1" />{isCreatingQrToken ? 'Creating...' : 'Sign with Phone'}
                   </Button>
                   <Button size="sm" onClick={() => setSignDialogOpen(true)}>
                     <Pen className="h-4 w-4 mr-1" />Sign Document
@@ -314,6 +338,9 @@ export function DocumentViewer({
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => setSignDialogOpen(false)}>Cancel</Button>
+              <Button variant="outline" onClick={handleOpenQrDialog} disabled={isCreatingQrToken}>
+                <QrCode className="h-4 w-4 mr-1" />{isCreatingQrToken ? 'Creating...' : 'Sign with Phone'}
+              </Button>
               <Button onClick={handleSignDocument} disabled={!signatureDataUrl}>
                 <Pen className="h-4 w-4 mr-1" />Apply Signature
               </Button>

@@ -22,6 +22,7 @@
 
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -33,10 +34,12 @@ import { DocumentViewer } from '@/components/DocumentViewer';
 import { SignatureCanvas } from '@/components/SignatureCanvas';
 import { useRequestDetail, useSignStep, useReturnStep } from '@/hooks/useSupabaseData';
 import { supabase } from '@/integrations/supabase/client';
+import { createQrSigningToken } from '@/lib/qrSigning';
+import { QRCodeSVG } from 'qrcode.react';
 import type { SignaturePlacement } from '@/components/PDFViewer';
 import {
   ArrowLeft, FileText, Building2, Calendar, User, Pen, RotateCcw,
-  MessageSquare, CheckCircle, AlertCircle, Eye,
+  MessageSquare, CheckCircle, AlertCircle, Eye, QrCode, Copy, ExternalLink,
 } from 'lucide-react';
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
@@ -47,10 +50,14 @@ export default function RequestDetail() {
   // Extract the request ID from the URL parameter (/requests/:id)
   const { id } = useParams<{ id: string }>();
   const { user } = useAuth();
+  const queryClient = useQueryClient();
 
   // Dialog state for sign and return modals
   const [returnDialogOpen, setReturnDialogOpen] = useState(false);
   const [signDialogOpen, setSignDialogOpen] = useState(false);
+  const [qrDialogOpen, setQrDialogOpen] = useState(false);
+  const [qrToken, setQrToken] = useState<string | null>(null);
+  const [isCreatingQrToken, setIsCreatingQrToken] = useState(false);
   const [returnMessage, setReturnMessage] = useState('');
   const [signatureDataUrl, setSignatureDataUrl] = useState<string | null>(null);
   
@@ -146,7 +153,7 @@ export default function RequestDetail() {
         y: updates.y,
         width: updates.width,
         height: updates.height,
-      } as any)
+      })
       .eq('id', placementId);
 
     if (error) {
@@ -169,11 +176,19 @@ export default function RequestDetail() {
     const channel = supabase
       .channel(`request-${id}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'approval_steps', filter: `request_id=eq.${id}` }, () => {
-        // Realtime event received — React Query will refetch automatically
+        // Realtime event received — refresh cached request data so signatures
+        // submitted from another tab/phone appear without a manual page reload.
+        queryClient.invalidateQueries({ queryKey: ['requests'] });
+        queryClient.invalidateQueries({ queryKey: ['all-steps'] });
+        queryClient.invalidateQueries({ queryKey: ['request-detail'] });
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'qr_signing_tokens', filter: `request_id=eq.${id}` }, async (payload) => {
         // When a QR token is marked as completed, notify the user
-        if (payload.eventType === 'UPDATE' && (payload.new as any).completed) {
+        const qrRow = payload.new as { completed?: boolean };
+        if (payload.eventType === 'UPDATE' && qrRow.completed) {
+          queryClient.invalidateQueries({ queryKey: ['requests'] });
+          queryClient.invalidateQueries({ queryKey: ['all-steps'] });
+          queryClient.invalidateQueries({ queryKey: ['request-detail'] });
           toast.success('Signature received from mobile device!');
         }
       })
@@ -181,7 +196,7 @@ export default function RequestDetail() {
 
     // Cleanup: remove the channel when leaving the page
     return () => { supabase.removeChannel(channel); };
-  }, [id]);
+  }, [id, queryClient]);
 
   /**
    * DETERMINE CURRENT USER'S ACTIONABLE STEP
@@ -202,6 +217,7 @@ export default function RequestDetail() {
   }, [user, steps]);
 
   const canApprove = !!currentUserStep;
+  const qrUrl = qrToken ? `${window.location.origin}/sign-mobile/${qrToken}` : '';
 
   /** Format a date string to a human-readable format (e.g., "15 March 2026, 14:30") */
   const formatDate = (dateStr: string) =>
@@ -230,6 +246,43 @@ export default function RequestDetail() {
         onError: (err) => toast.error(err.message),
       }
     );
+  };
+
+  /**
+   * QR SIGNING HANDLER
+   * Creates a real backend token and displays it as a QR code. A phone cannot
+   * read the desktop browser's localStorage, so database-backed tokens are the
+   * required mechanism for true cross-device signing.
+   */
+  const handleOpenQrDialog = async () => {
+    if (!id || !currentUserStep) return;
+    setIsCreatingQrToken(true);
+    try {
+      if (!qrToken) {
+        const token = await createQrSigningToken({
+          requestId: id,
+          stepId: currentUserStep.id,
+          approverName: currentUserStep.approver_name,
+        });
+        setQrToken(token);
+      }
+      setSignDialogOpen(false);
+      setQrDialogOpen(true);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Unable to create phone signing link');
+    } finally {
+      setIsCreatingQrToken(false);
+    }
+  };
+
+  const handleCopyQrLink = () => {
+    if (!qrUrl) return;
+    navigator.clipboard.writeText(qrUrl);
+    toast.success('Phone signing link copied');
+  };
+
+  const handleOpenQrLink = () => {
+    if (qrUrl) window.open(qrUrl, '_blank');
   };
 
   /**
@@ -301,6 +354,9 @@ export default function RequestDetail() {
               </div>
               <div className="flex flex-wrap gap-3">
                 <Button onClick={() => setSignDialogOpen(true)}><Pen className="mr-2 h-4 w-4" />Sign Document</Button>
+                <Button variant="outline" onClick={handleOpenQrDialog} disabled={isCreatingQrToken}>
+                  <QrCode className="mr-2 h-4 w-4" />{isCreatingQrToken ? 'Creating...' : 'Sign with Phone'}
+                </Button>
                 <Button variant="outline" onClick={() => setReturnDialogOpen(true)}><RotateCcw className="mr-2 h-4 w-4" />Return</Button>
               </div>
             </div>
@@ -432,6 +488,7 @@ export default function RequestDetail() {
                   }}
                   isEditing={false}
                   placements={selectedFilePlacements}
+                  downloadPlacements={placements}
                   requestId={id}
                   allowPlacementAdjustments={canAdjustPlacements}
                   onPlacementUpdate={handlePlacementUpdate}
@@ -488,9 +545,43 @@ export default function RequestDetail() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setSignDialogOpen(false)}>Cancel</Button>
+            <Button variant="outline" onClick={handleOpenQrDialog} disabled={isCreatingQrToken}>
+              <QrCode className="mr-2 h-4 w-4" />{isCreatingQrToken ? 'Creating...' : 'Sign with Phone'}
+            </Button>
             <Button onClick={handleSign} disabled={!signatureDataUrl || signStepMutation.isPending}>
               <Pen className="mr-2 h-4 w-4" />Confirm Signature
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ==================== QR SIGNING DIALOG ==================== */}
+      <Dialog open={qrDialogOpen} onOpenChange={setQrDialogOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Sign with Phone</DialogTitle>
+            <DialogDescription>Scan this QR code with your phone camera, or copy the signing link.</DialogDescription>
+          </DialogHeader>
+          <div className="flex justify-center py-6">
+            {qrUrl && (
+              <div className="rounded-lg bg-white p-4">
+                <QRCodeSVG value={qrUrl} size={200} />
+              </div>
+            )}
+          </div>
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" className="flex-1" onClick={handleCopyQrLink}>
+              <Copy className="mr-1 h-4 w-4" />Copy Link
+            </Button>
+            <Button variant="outline" size="sm" className="flex-1" onClick={handleOpenQrLink}>
+              <ExternalLink className="mr-1 h-4 w-4" />Open
+            </Button>
+          </div>
+          <p className="text-center text-xs text-muted-foreground">
+            The link expires after 15 minutes and the desktop view updates automatically after signing.
+          </p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setQrDialogOpen(false)}>Close</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

@@ -21,13 +21,22 @@ import { useParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { supabase } from '@/integrations/supabase/client';
+import { exportNormalizedSignature } from '@/lib/signatureImage';
 import { Check, AlertCircle } from 'lucide-react';
+
+interface QrSigningTokenRow {
+  approver_name: string;
+  completed: boolean;
+  expires_at: string;
+}
 
 export default function SignMobile() {
   const { token } = useParams<{ token: string }>();
-  const [tokenData, setTokenData] = useState<any>(null);
+  const [tokenData, setTokenData] = useState<QrSigningTokenRow | null>(null);
   const [loading, setLoading] = useState(true);
   const [submitted, setSubmitted] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const [hasSignature, setHasSignature] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isDrawing, setIsDrawing] = useState(false);
@@ -111,42 +120,36 @@ export default function SignMobile() {
   const clearCanvas = () => {
     const ctx = canvasRef.current?.getContext('2d');
     if (!ctx) return;
-    ctx.clearRect(0, 0, canvasRef.current!.width, canvasRef.current!.height);
+    ctx.clearRect(0, 0, 400, 200);
     setHasSignature(false);
+    setSubmitError(null);
   };
 
   const handleSubmit = async () => {
     if (!canvasRef.current || !token || !tokenData) return;
-    // Normalize: downscale the DPR-scaled canvas back to logical (400x200)
-    // pixels so the signature embeds at the correct size in the PDF.
-    const tmp = document.createElement('canvas');
-    tmp.width = 400;
-    tmp.height = 200;
-    const tctx = tmp.getContext('2d');
-    if (!tctx) return;
-    tctx.drawImage(canvasRef.current, 0, 0, canvasRef.current.width, canvasRef.current.height, 0, 0, 400, 200);
-    const dataUrl = tmp.toDataURL('image/png');
+    const dataUrl = exportNormalizedSignature(canvasRef.current, 400, 200, { trim: true, padding: 8 });
+    if (!dataUrl) return;
 
-    // Update the token in the database
-    const { error } = await supabase
-      .from('qr_signing_tokens')
-      .update({ signature_data_url: dataUrl, completed: true })
-      .eq('token', token);
+    setSubmitting(true);
+    setSubmitError(null);
+    const { error } = await supabase.functions.invoke('complete-qr-signing', {
+      body: {
+        token,
+        signatureDataUrl: dataUrl,
+        metadata: {
+          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+          screen: `${window.screen.width}x${window.screen.height}`,
+          devicePixelRatio: window.devicePixelRatio || 1,
+        },
+      },
+    });
+
+    setSubmitting(false);
 
     if (error) {
-      console.error('Failed to submit signature:', error);
+      setSubmitError(error.message || 'Failed to submit signature');
       return;
     }
-
-    // Also update the approval step directly
-    await supabase
-      .from('approval_steps')
-      .update({
-        status: 'APPROVED' as any,
-        signed_at: new Date().toISOString(),
-        signature_path: dataUrl,
-      })
-      .eq('id', tokenData.step_id);
 
     setSubmitted(true);
   };
@@ -220,10 +223,11 @@ export default function SignMobile() {
           <div className="flex gap-2">
             <Button variant="outline" size="sm" onClick={clearCanvas} disabled={!hasSignature}>Clear</Button>
             <div className="flex-1" />
-            <Button onClick={handleSubmit} disabled={!hasSignature}>
-              <Check className="h-4 w-4 mr-1" />Submit Signature
+            <Button onClick={handleSubmit} disabled={!hasSignature || submitting}>
+              <Check className="h-4 w-4 mr-1" />{submitting ? 'Submitting...' : 'Submit Signature'}
             </Button>
           </div>
+          {submitError && <p className="text-sm text-destructive">{submitError}</p>}
         </CardContent>
       </Card>
     </div>

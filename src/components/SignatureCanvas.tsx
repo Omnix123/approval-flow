@@ -31,6 +31,7 @@ import { Button } from '@/components/ui/button';
 import { RotateCcw, Save } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { getSavedSignature, saveSignature } from '@/lib/signatureStore';
+import { drawImageAspectContain, exportNormalizedSignature } from '@/lib/signatureImage';
 import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
 
@@ -137,13 +138,7 @@ export function SignatureCanvas({
   const exportSignature = (): string | null => {
     const canvas = canvasRef.current;
     if (!canvas) return null;
-    const tmp = document.createElement('canvas');
-    tmp.width = width;
-    tmp.height = height;
-    const tctx = tmp.getContext('2d');
-    if (!tctx) return null;
-    tctx.drawImage(canvas, 0, 0, canvas.width, canvas.height, 0, 0, width, height);
-    return tmp.toDataURL('image/png');
+    return exportNormalizedSignature(canvas, width, height, { trim: true, padding: 8 });
   };
 
   /** End the current stroke and export the signature */
@@ -183,9 +178,9 @@ export function SignatureCanvas({
     const img = new Image();
     img.onload = () => {
       ctx.clearRect(0, 0, width, height);
-      ctx.drawImage(img, 0, 0, width, height);
+      drawImageAspectContain(ctx, img, width, height);
       setHasSignature(true);
-      onSignatureChange?.(savedSig);
+      onSignatureChange?.(exportSignature());
     };
     img.src = savedSig;
   };

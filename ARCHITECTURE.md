@@ -114,7 +114,7 @@ src/
 ├── lib/                             # Utility libraries
 │   ├── validation.ts                 # Zod schemas for all form inputs
 │   ├── pdfExport.ts                  # Generate signed PDFs with embedded signatures
-│   ├── signatureStore.ts             # localStorage cache for saved signatures + QR tokens
+│   ├── signatureStore.ts             # localStorage cache for reusable saved signatures
 │   └── utils.ts                      # General utilities (cn helper for Tailwind)
 │
 ├── types/
@@ -324,20 +324,27 @@ useSignStep mutation fires:
 Supabase Realtime broadcasts change → other users see update instantly
 ```
 
+**Signature precision:** Signature canvases are rendered at `devicePixelRatio`
+internally so mouse, touch, and stylus strokes stay sharp on high-resolution
+screens. Before saving, the app exports a normalized PNG at the logical canvas
+size and trims transparent whitespace around the ink. This prevents high-DPI
+mobile signatures from embedding too large in the PDF and lets `pdf-lib` fit the
+signature cleanly inside the saved placement box.
+
 ### QR Code Mobile Signing
 
 ```
 Desktop                              │  Mobile Phone
 ─────────────────────────────────────│──────────────────
 1. Click "Sign with Phone"           │
-2. Generate QR token (15 min expiry) │
+2. Generate database token           │
 3. Store token in qr_signing_tokens  │
 4. Display QR code                   │
                                      │  5. Scan QR → opens /sign-mobile/:token
                                      │  6. Fetch token data from database
                                      │  7. Draw signature on canvas
-                                     │  8. UPDATE qr_signing_tokens (completed=true)
-                                     │  9. UPDATE approval_steps (APPROVED)
+                                     │  8. Call complete-qr-signing function
+                                     │  9. Function updates token + approval step
 10. Realtime subscription detects    │
     the change → shows toast         │
     "Signature received!"            │
@@ -370,7 +377,7 @@ When an approver signs a document, other users viewing the same request see the 
 
 ### 8.3 PDF Download with Embedded Signatures
 
-Once all approvers have signed, the system can generate a PDF with all signatures visually embedded at their designated positions using the `pdf-lib` library.
+Once all approvers have signed, the system can generate one final PDF with all uploaded PDFs merged in upload order and all signatures visually embedded at their designated positions using the `pdf-lib` library. Signature images are fitted inside the placement rectangle with their aspect ratio preserved, so the ink is centered and never stretched.
 
 ### 8.4 Inline Document Viewing
 
@@ -403,7 +410,7 @@ Admins can:
 | `Login.tsx` | Auth forms | Zod validation, tab-based login/signup, error display |
 | `Dashboard.tsx` | Home page | Stats cards, pending approvals, recent requests |
 | `RequestList.tsx` | Browse all | Search filter, status filter, grid layout |
-| `RequestDetail.tsx` | View & sign | Realtime subscription, sign/return dialogs, blob-only document viewer |
+| `RequestDetail.tsx` | View & sign | Realtime subscription, sign/return dialogs, QR signing dialog, blob-only document viewer |
 | `CreateRequest.tsx` | 2-step wizard | Details → Approver selection, file upload |
 | `Approvals.tsx` | Approver queue | Pending vs. completed approvals |
 | `AdminDashboard.tsx` | Admin panel | User table with role selector, audit log viewer |
@@ -416,7 +423,7 @@ Admins can:
 | `AppLayout.tsx` | Sticky header with navigation, user avatar dropdown, mobile menu |
 | `ApprovalProgress.tsx` | Vertical timeline showing each approval step's status |
 | `DocumentViewer.tsx` | PDF preview with signature overlay, QR code dialog |
-| `SignatureCanvas.tsx` | HTML5 Canvas for drawing signatures with touch support |
+| `SignatureCanvas.tsx` | HTML5 Canvas for drawing normalized, trimmed signatures with touch support |
 | `StatusBadge.tsx` | Color-coded status pill (Pending=yellow, Approved=green, etc.) |
 | `RequestCard.tsx` | Card displaying request summary with progress bar |
 
@@ -426,7 +433,9 @@ Admins can:
 |---|---|
 | `validation.ts` | Zod schemas: loginSchema, signupSchema, createRequestSchema, addUserSchema, returnStepSchema |
 | `pdfExport.ts` | Uses pdf-lib to embed signature images into a PDF for download |
-| `signatureStore.ts` | LocalStorage helpers for saving/retrieving signatures and QR tokens |
+| `qrSigning.ts` | Creates database-backed QR tokens for true phone-to-desktop signing |
+| `signatureImage.ts` | Normalizes high-DPI canvas exports and trims transparent signature whitespace |
+| `signatureStore.ts` | LocalStorage helpers for saving/retrieving reusable signatures |
 | `utils.ts` | `cn()` helper for merging Tailwind CSS classes |
 
 ### Backend Files
@@ -434,6 +443,7 @@ Admins can:
 | File | Purpose |
 |---|---|
 | `supabase/functions/admin-create-user/index.ts` | Deno Edge Function that creates users with the service role key (admin-only) |
+| `supabase/functions/complete-qr-signing/index.ts` | Deno Edge Function that completes QR/mobile signing without requiring phone login |
 | `supabase/functions/inline-request-file/index.ts` | Deno Edge Function that authorizes request-file access and returns bytes for blob-only inline viewing |
 | `supabase/migrations/*.sql` | Database schema history — tables, RLS policies, triggers, functions |
 
